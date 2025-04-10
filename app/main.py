@@ -244,6 +244,172 @@ def list_currencies_shortcut(export, output_dir, use_home_dir):
     )
 
 
+@cli.group(name="crypto")
+def crypto_shortcut():
+    """Commands for exploring cryptocurrency data (shortcut for 'stock crypto')."""
+    pass
+
+
+@crypto_shortcut.command(name="list")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'Binance')")
+@click.option("--base", "-b", help="Filter by base currency (e.g., 'BTC')")
+@click.option("--quote", "-q", help="Filter by quote currency (e.g., 'USD')")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_crypto_pairs_shortcut(exchange, base, quote, search, limit, detailed,
+                               export, output_dir, use_home_dir):
+    """List available cryptocurrency pairs with optional filtering."""
+    # Import the actual command function
+    from app.cli.commands import list_crypto_pairs
+    # Call the function with all parameters
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_crypto_pairs,
+        exchange=exchange,
+        base=base,
+        quote=quote,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@crypto_shortcut.command(name="exchanges")
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_crypto_exchanges_shortcut(export, output_dir, use_home_dir):
+    """List available cryptocurrency exchanges."""
+    from app.cli.commands import list_crypto_exchanges
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_crypto_exchanges,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.group(name="funds")
+def funds_shortcut():
+    """Commands for exploring available funds (shortcut for 'stock funds')."""
+    pass
+
+
+@funds_shortcut.command(name="list")
+@click.option("--type", "-t", type=click.Choice(['etf', 'mutual_fund', 'both'], case_sensitive=False),
+              default='both', help="Type of funds to list (default: both)")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of funds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_funds_shortcut(type, exchange, country, search, limit, detailed,
+                        export, output_dir, use_home_dir):
+    """List available funds (ETFs and mutual funds) with optional filtering."""
+    from app.cli.commands import list_funds
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_funds,
+        type=type,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@funds_shortcut.command(name="etfs")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of ETFs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_etfs_shortcut(exchange, country, search, limit, detailed,
+                       export, output_dir, use_home_dir):
+    """List available ETFs with optional filtering."""
+    from app.cli.commands import list_etfs
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_etfs,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@funds_shortcut.command(name="mutual")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of mutual funds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_mutual_funds_shortcut(exchange, country, search, limit, detailed,
+                               export, output_dir, use_home_dir):
+    """List available mutual funds with optional filtering."""
+    from app.cli.commands import list_mutual_funds
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_mutual_funds,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
 def main():
     """Main entry point for the CLI app."""
     try:

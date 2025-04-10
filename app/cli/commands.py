@@ -709,3 +709,452 @@ def list_currencies(export, output_dir, use_home_dir):
     except Exception as e:
         logger.error(f"Error fetching currencies: {e}", exc_info=True)
         click.echo(f"Error fetching currencies: {e}")
+
+
+@stock.group()
+def crypto():
+    """Commands for exploring cryptocurrency data."""
+    pass
+
+
+@crypto.command(name="list")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'Binance')")
+@click.option("--base", "-b", help="Filter by base currency (e.g., 'BTC')")
+@click.option("--quote", "-q", help="Filter by quote currency (e.g., 'USD')")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_crypto_pairs(exchange, base, quote, search, limit, detailed,
+                      export, output_dir, use_home_dir):
+    """
+    List available cryptocurrency pairs with optional filtering.
+
+    Examples:
+    \b
+    # List all cryptocurrency pairs (limited to 100 by default)
+    stockcli stock crypto list
+
+    # List all Bitcoin pairs on Binance
+    stockcli stock crypto list --base BTC --exchange Binance
+
+    # List all pairs with USD as quote currency
+    stockcli stock crypto list --quote USD
+
+    # Search for a specific symbol
+    stockcli stock crypto list --search "BTC/USD"
+
+    # Show more details for each pair
+    stockcli stock crypto list --detailed
+
+    # List all pairs (no limit)
+    stockcli stock crypto list --limit 0
+
+    # Export the cryptocurrency data to CSV
+    stockcli stock crypto list --export csv
+    """
+    from app.utils.display import display_crypto_pairs_table, create_progress_spinner
+    from app.models.cryptocurrency import CryptoPair
+
+    try:
+        # Show a spinner while fetching crypto data
+        with create_progress_spinner(description="Fetching cryptocurrency data...") as progress:
+            task = progress.add_task(
+                "Fetching cryptocurrency data...", total=None)
+
+            # Fetch cryptocurrency pairs with provided filters
+            response = client.get_cryptocurrencies(
+                symbol=search,
+                exchange=exchange,
+                currency_base=base,
+                currency_quote=quote
+            )
+
+        # Convert API response to CryptoPair objects
+        crypto_pairs = [CryptoPair.from_api_response(
+            item) for item in response]
+
+        # Apply display limit if specified and non-zero
+        display_limit = None if limit == 0 else limit
+
+        # Display the cryptocurrency pairs
+        display_crypto_pairs_table(crypto_pairs, display_limit, detailed)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Use all crypto pairs for export regardless of display limit
+            from app.utils.export import export_symbols
+            export_results = export_symbols(crypto_pairs, export_formats, output_dir,
+                                            "crypto_pairs", use_home_dir)
+
+            if export_results:
+                click.echo("\nExported cryptocurrency pairs to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo(
+                    "\nFailed to export cryptocurrency data. Check logs for details.")
+
+    except Exception as e:
+        logger.error(f"Error fetching cryptocurrency data: {e}", exc_info=True)
+        click.echo(f"Error fetching cryptocurrency data: {e}")
+
+
+@crypto.command(name="exchanges")
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_crypto_exchanges(export, output_dir, use_home_dir):
+    """
+    List available cryptocurrency exchanges.
+
+    Examples:
+    \b
+    # List all cryptocurrency exchanges
+    stockcli stock crypto exchanges
+
+    # Export the list of exchanges to a file
+    stockcli stock crypto exchanges --export json
+    """
+    from app.utils.display import display_crypto_exchanges_list, create_progress_spinner
+
+    try:
+        # Show a spinner while fetching exchanges
+        with create_progress_spinner(description="Fetching cryptocurrency exchanges...") as progress:
+            task = progress.add_task(
+                "Fetching cryptocurrency exchanges...", total=None)
+
+            # Fetch cryptocurrency exchanges
+            exchanges = client.get_crypto_exchanges()
+
+        # Display the exchanges
+        display_crypto_exchanges_list(exchanges)
+
+        # Export if requested
+        if export:
+            # Convert the list of strings to a format that can be exported
+            exchange_objects = [
+                {'name': exchange}
+                for exchange in exchanges
+            ]
+
+            from app.utils.export import export_to_json
+
+            if export.lower() == 'json':
+                if output_dir:
+                    export_dir = Path(output_dir)
+                elif use_home_dir:
+                    export_dir = Path.home() / '.stock_cli' / 'exports'
+                else:
+                    export_dir = Path('stock_cli') / 'exports'
+
+                # Ensure directory exists
+                export_dir.mkdir(parents=True, exist_ok=True)
+
+                # Generate timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+                # Create filepath
+                filepath = export_dir / f"crypto_exchanges_{timestamp}.json"
+
+                # Export
+                if export_to_json(exchange_objects, filepath):
+                    click.echo(
+                        f"\nExported cryptocurrency exchanges to: {filepath}")
+                else:
+                    click.echo(
+                        "\nFailed to export cryptocurrency exchanges. Check logs for details.")
+
+    except Exception as e:
+        logger.error(
+            f"Error fetching cryptocurrency exchanges: {e}", exc_info=True)
+        click.echo(f"Error fetching cryptocurrency exchanges: {e}")
+
+
+@stock.group()
+def funds():
+    """Commands for exploring available funds (ETFs and mutual funds)."""
+    pass
+
+
+@funds.command(name="list")
+@click.option("--type", "-t", type=click.Choice(['etf', 'mutual_fund', 'both'], case_sensitive=False),
+              default='both', help="Type of funds to list (default: both)")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of funds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_funds(type, exchange, country, search, limit, detailed,
+               export, output_dir, use_home_dir):
+    """
+    List available funds with optional filtering.
+
+    Examples:
+    \b
+    # List all funds (limited to 100 by default)
+    stockcli stock funds list
+
+    # List ETFs only
+    stockcli stock funds list --type etf
+
+    # List mutual funds only
+    stockcli stock funds list --type mutual_fund
+
+    # List ETFs from a specific exchange
+    stockcli stock funds list --type etf --exchange NASDAQ
+
+    # Search for a specific fund
+    stockcli stock funds list --search "Vanguard"
+
+    # Show more details for each fund
+    stockcli stock funds list --detailed
+
+    # List all funds (no limit)
+    stockcli stock funds list --limit 0
+
+    # Export the funds to CSV
+    stockcli stock funds list --export csv
+    """
+    from app.utils.display import display_funds_table, create_progress_spinner
+    from app.models.fund import Fund
+
+    try:
+        # Show a spinner while fetching funds
+        with create_progress_spinner(description="Fetching funds...") as progress:
+            task = progress.add_task("Fetching funds...", total=None)
+
+            # Determine which type of funds to fetch
+            fund_type = None
+            if type.lower() == 'etf':
+                fund_type = 'etf'
+            elif type.lower() == 'mutual_fund':
+                fund_type = 'mutual_fund'
+
+            # Fetch funds with provided filters
+            response = client.get_funds(
+                fund_type=fund_type,
+                exchange=exchange,
+                country=country,
+                symbol=search
+            )
+
+        # Convert API response to Fund objects
+        funds = [Fund.from_symbol(item) for item in response]
+
+        # Apply display limit if specified and non-zero
+        display_limit = None if limit == 0 else limit
+
+        # Display the funds
+        display_funds_table(funds, display_limit, detailed)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Use all funds for export regardless of display limit
+            from app.utils.export import export_symbols
+            export_results = export_symbols(funds, export_formats, output_dir,
+                                            "funds", use_home_dir)
+
+            if export_results:
+                click.echo("\nExported funds to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo("\nFailed to export funds. Check logs for details.")
+
+    except Exception as e:
+        logger.error(f"Error fetching funds: {e}", exc_info=True)
+        click.echo(f"Error fetching funds: {e}")
+
+
+@funds.command(name="etfs")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of ETFs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_etfs(exchange, country, search, limit, detailed,
+              export, output_dir, use_home_dir):
+    """
+    List available ETFs with optional filtering.
+
+    Examples:
+    \b
+    # List all ETFs (limited to 100 by default)
+    stockcli stock funds etfs
+
+    # List ETFs from a specific exchange
+    stockcli stock funds etfs --exchange NASDAQ
+
+    # Search for a specific ETF
+    stockcli stock funds etfs --search "S&P 500"
+    """
+    from app.utils.display import display_funds_table, create_progress_spinner
+    from app.models.fund import Fund
+
+    try:
+        # Show a spinner while fetching ETFs
+        with create_progress_spinner(description="Fetching ETFs...") as progress:
+            task = progress.add_task("Fetching ETFs...", total=None)
+
+            # Fetch ETFs with provided filters
+            response = client.get_etfs(
+                exchange=exchange,
+                country=country,
+                symbol=search
+            )
+
+        # Convert API response to Fund objects
+        etfs = [Fund.from_symbol(item) for item in response]
+
+        # Apply display limit if specified and non-zero
+        display_limit = None if limit == 0 else limit
+
+        # Display the ETFs
+        display_funds_table(etfs, display_limit, detailed)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Use all ETFs for export regardless of display limit
+            from app.utils.export import export_symbols
+            export_results = export_symbols(etfs, export_formats, output_dir,
+                                            "etfs", use_home_dir)
+
+            if export_results:
+                click.echo("\nExported ETFs to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo("\nFailed to export ETFs. Check logs for details.")
+
+    except Exception as e:
+        logger.error(f"Error fetching ETFs: {e}", exc_info=True)
+        click.echo(f"Error fetching ETFs: {e}")
+
+
+@funds.command(name="mutual")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of mutual funds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_mutual_funds(exchange, country, search, limit, detailed,
+                      export, output_dir, use_home_dir):
+    """
+    List available mutual funds with optional filtering.
+
+    Examples:
+    \b
+    # List all mutual funds (limited to 100 by default)
+    stockcli stock funds mutual
+
+    # List mutual funds from a specific country
+    stockcli stock funds mutual --country "United States"
+
+    # Search for a specific mutual fund
+    stockcli stock funds mutual --search "Vanguard"
+    """
+    from app.utils.display import display_funds_table, create_progress_spinner
+    from app.models.fund import Fund
+
+    try:
+        # Show a spinner while fetching mutual funds
+        with create_progress_spinner(description="Fetching mutual funds...") as progress:
+            task = progress.add_task("Fetching mutual funds...", total=None)
+
+            # Fetch mutual funds with provided filters
+            response = client.get_mutual_funds(
+                exchange=exchange,
+                country=country,
+                symbol=search
+            )
+
+        # Convert API response to Fund objects
+        mutual_funds = [Fund.from_symbol(item) for item in response]
+
+        # Apply display limit if specified and non-zero
+        display_limit = None if limit == 0 else limit
+
+        # Display the mutual funds
+        display_funds_table(mutual_funds, display_limit, detailed)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Use all mutual funds for export regardless of display limit
+            from app.utils.export import export_symbols
+            export_results = export_symbols(mutual_funds, export_formats, output_dir,
+                                            "mutual_funds", use_home_dir)
+
+            if export_results:
+                click.echo("\nExported mutual funds to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo(
+                    "\nFailed to export mutual funds. Check logs for details.")
+
+    except Exception as e:
+        logger.error(f"Error fetching mutual funds: {e}", exc_info=True)
+        click.echo(f"Error fetching mutual funds: {e}")

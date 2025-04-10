@@ -119,30 +119,33 @@ def create_progress_spinner(description: str = "Loading...") -> Progress:
 def display_forex_pairs_table(forex_pairs: List[Any], limit: Optional[int] = None) -> None:
     """
     Display a list of forex pairs in a formatted table.
-    
+
     Args:
         forex_pairs: List of ForexPair objects to display
         limit: Maximum number of pairs to display
     """
     if not forex_pairs:
-        console.print("[yellow]No forex pairs found matching the criteria.[/yellow]")
+        console.print(
+            "[yellow]No forex pairs found matching the criteria.[/yellow]")
         return
-    
+
     # Apply limit if specified
     if limit and len(forex_pairs) > limit:
         display_pairs = forex_pairs[:limit]
-        console.print(f"[blue]Showing {limit} of {len(forex_pairs)} forex pairs.[/blue]")
+        console.print(
+            f"[blue]Showing {limit} of {len(forex_pairs)} forex pairs.[/blue]")
     else:
         display_pairs = forex_pairs
-    
-    table = Table(title=f"Available Forex Pairs ({len(display_pairs)} displayed)")
-    
+
+    table = Table(
+        title=f"Available Forex Pairs ({len(display_pairs)} displayed)")
+
     # Add columns
     table.add_column("Symbol", style="cyan")
     table.add_column("Base", style="green")
     table.add_column("Quote", style="red")
     table.add_column("Name")
-    
+
     # Add rows
     for pair in display_pairs:
         table.add_row(
@@ -151,28 +154,29 @@ def display_forex_pairs_table(forex_pairs: List[Any], limit: Optional[int] = Non
             pair.currency_quote,
             pair.name if pair.name else f"{pair.currency_base}/{pair.currency_quote}"
         )
-    
+
     console.print(table)
+
 
 def display_currencies_table(currencies: List[Any]) -> None:
     """
     Display a list of currencies in a formatted table.
-    
+
     Args:
         currencies: List of Currency objects to display
     """
     if not currencies:
         console.print("[yellow]No currencies found.[/yellow]")
         return
-    
+
     table = Table(title=f"Available Currencies ({len(currencies)})")
-    
+
     # Add columns
     table.add_column("Code", style="cyan")
     table.add_column("Name")
     table.add_column("Currency Name")
     table.add_column("Country")
-    
+
     # Add rows
     for currency in currencies:
         table.add_row(
@@ -181,5 +185,149 @@ def display_currencies_table(currencies: List[Any]) -> None:
             currency.currency_name if currency.currency_name else "N/A",
             currency.country if currency.country else "N/A"
         )
-    
+
+    console.print(table)
+
+
+def display_crypto_pairs_table(crypto_pairs: List[Any], limit: Optional[int] = None,
+                               show_details: bool = False) -> None:
+    """
+    Display a list of cryptocurrency pairs in a formatted table.
+
+    Args:
+        crypto_pairs: List of CryptoPair objects to display
+        limit: Maximum number of crypto pairs to display
+        show_details: Whether to show additional details
+    """
+    if not crypto_pairs:
+        console.print(
+            "[yellow]No cryptocurrency pairs found matching the criteria.[/yellow]")
+        return
+
+    # Apply limit if specified
+    if limit and len(crypto_pairs) > limit:
+        display_pairs = crypto_pairs[:limit]
+        console.print(
+            f"[blue]Showing {limit} of {len(crypto_pairs)} cryptocurrency pairs.[/blue]")
+    else:
+        display_pairs = crypto_pairs
+
+    table = Table(
+        title=f"Available Cryptocurrency Pairs ({len(display_pairs)} displayed)")
+
+    # Add columns
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Base", style="green")
+    table.add_column("Quote", style="magenta")
+    table.add_column("Exchange")
+
+    if show_details:
+        table.add_column("Available Exchanges")
+        table.add_column("Price")
+
+    # Add rows
+    for pair in display_pairs:
+        row = [
+            pair.symbol,
+            pair.base_currency or pair.currency_base,
+            pair.quote_currency or pair.currency_quote,
+            pair.exchange
+        ]
+
+        if show_details:
+            exchanges = ", ".join(pair.available_exchanges[:3])
+            if len(pair.available_exchanges) > 3:
+                exchanges += f" +{len(pair.available_exchanges) - 3} more"
+
+            row.extend([
+                exchanges,
+                f"{pair.price:.8f}" if pair.price is not None else "N/A"
+            ])
+
+        table.add_row(*row)
+
+    console.print(table)
+
+
+def display_crypto_exchanges_list(exchanges: List[str]) -> None:
+    """
+    Display a list of cryptocurrency exchanges.
+
+    Args:
+        exchanges: List of exchange names to display
+    """
+    if not exchanges:
+        console.print("[yellow]No cryptocurrency exchanges found.[/yellow]")
+        return
+
+    table = Table(
+        title=f"Available Cryptocurrency Exchanges ({len(exchanges)})")
+
+    # Add columns
+    table.add_column("Exchange Name", style="cyan")
+
+    # Add rows
+    for exchange in sorted(exchanges):
+        table.add_row(exchange)
+
+    console.print(table)
+
+
+def display_funds_table(funds: List[Any], limit: Optional[int] = None,
+                        show_details: bool = False) -> None:
+    """
+    Display a list of funds in a formatted table.
+
+    Args:
+        funds: List of Fund objects to display
+        limit: Maximum number of funds to display
+        show_details: Whether to show additional details
+    """
+    if not funds:
+        console.print("[yellow]No funds found matching the criteria.[/yellow]")
+        return
+
+    # Apply limit if specified
+    if limit and len(funds) > limit:
+        display_funds = funds[:limit]
+        console.print(f"[blue]Showing {limit} of {len(funds)} funds.[/blue]")
+    else:
+        display_funds = funds
+
+    table = Table(title=f"Available Funds ({len(display_funds)} displayed)")
+
+    # Add columns
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Name")
+    table.add_column("Type", style="magenta")
+    table.add_column("Exchange")
+
+    if show_details:
+        table.add_column("Fund Family")
+        table.add_column("Asset Class")
+        table.add_column("Expense Ratio")
+        table.add_column("Country")
+        table.add_column("Currency")
+
+    # Add rows
+    for fund in display_funds:
+        row = [
+            fund.symbol,
+            fund.name,
+            fund.type.replace('_', ' ').title(),
+            fund.exchange
+        ]
+
+        if show_details:
+            expense_ratio = f"{fund.expense_ratio:.4%}" if fund.expense_ratio is not None else "N/A"
+            row.extend([
+                fund.fund_family if fund.fund_family else "N/A",
+                fund.asset_class if fund.asset_class else "N/A",
+                expense_ratio,
+                fund.country,
+                fund.currency
+            ])
+
+        table.add_row(*row)
+
     console.print(table)
