@@ -1,6 +1,7 @@
 /GDrive
 .env
 .env.test
+stockcli.egg-info/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

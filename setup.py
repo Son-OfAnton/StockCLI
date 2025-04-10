@@ -12,7 +12,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "stockcli=main:cli",
+            "stockcli=app.main:cli",
         ],
     },
     python_requires=">=3.7",
