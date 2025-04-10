@@ -379,3 +379,333 @@ def history(symbol, interval, start, end):
 def indicator(symbol, indicator, period):
     """Calculate technical indicator for SYMBOL."""
     click.echo(f"Calculating {indicator} for {symbol} (Not yet implemented)")
+
+
+@stock.group()
+def symbols():
+    """Commands for exploring available symbols."""
+    pass
+
+
+@symbols.command(name="list")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ')")
+@click.option("--type", "-t", help="Filter by type (e.g., 'stock', 'etf')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of symbols to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_symbols(exchange, type, country, search, limit, detailed,
+                 export, output_dir, use_home_dir):
+    """
+    List available symbols with optional filtering.
+
+    Examples:
+    \b
+    # List all symbols (limited to 100 by default)
+    stockcli stock symbols list
+
+    # List all NASDAQ stocks
+    stockcli stock symbols list --exchange NASDAQ --type stock
+
+    # Search for a specific symbol or name
+    stockcli stock symbols list --search "Apple"
+
+    # Show more details for each symbol
+    stockcli stock symbols list --detailed
+
+    # List all symbols (no limit)
+    stockcli stock symbols list --limit 0
+
+    # Export the symbols to CSV
+    stockcli stock symbols list --export csv
+    """
+    from app.utils.display import display_symbols_table, create_progress_spinner
+    from app.models.symbol import Symbol
+
+    try:
+        # Show a spinner while fetching symbols (can take a while)
+        with create_progress_spinner(description="Fetching symbols...") as progress:
+            task = progress.add_task("Fetching symbols...", total=None)
+
+            # Fetch symbols with provided filters
+            response = client.get_symbols(
+                exchange=exchange,
+                type=type,
+                country=country,
+                symbol=search
+            )
+
+        # Convert API response to Symbol objects
+        symbols = [Symbol.from_api_response(item) for item in response]
+
+        # Apply display limit if specified and non-zero
+        display_limit = None if limit == 0 else limit
+
+        # Display the symbols
+        display_symbols_table(symbols, display_limit, detailed)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Use all symbols for export regardless of display limit
+            from app.utils.export import export_symbols
+            export_results = export_symbols(symbols, export_formats, output_dir,
+                                            "symbols", use_home_dir)
+
+            if export_results:
+                click.echo("\nExported symbols to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo(
+                    "\nFailed to export symbols. Check logs for details.")
+
+    except Exception as e:
+        logger.error(f"Error fetching symbols: {e}", exc_info=True)
+        click.echo(f"Error fetching symbols: {e}")
+
+
+@symbols.command(name="types")
+def list_symbol_types():
+    """
+    List available symbol types.
+    """
+
+    try:
+        # Get symbol types
+        types = client.get_symbol_types()
+
+        # Display the types
+        click.echo("\nAvailable Symbol Types:")
+        for type_name in types:
+            click.echo(f"- {type_name}")
+
+    except Exception as e:
+        logger.error(f"Error fetching symbol types: {e}", exc_info=True)
+        click.echo(f"Error fetching symbol types: {e}")
+
+
+@symbols.command(name="exchanges")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_exchanges(export, output_dir, use_home_dir):
+    """
+    List available exchanges.
+
+    Examples:
+    \b
+    # List all exchanges
+    stockcli stock symbols exchanges
+
+    # Export exchanges to JSON
+    stockcli stock symbols exchanges --export json
+    """
+    from app.utils.display import display_exchanges_table, create_progress_spinner
+    from app.models.symbol import Exchange
+
+    try:
+        # Show a spinner while fetching exchanges
+        with create_progress_spinner(description="Fetching exchanges...") as progress:
+            task = progress.add_task("Fetching exchanges...", total=None)
+
+            # Fetch exchanges
+            response = client.get_exchanges()
+
+        # Convert API response to Exchange objects
+        exchanges = [Exchange.from_api_response(item) for item in response]
+
+        # Display the exchanges
+        display_exchanges_table(exchanges)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            from app.utils.export import export_symbols
+            export_results = export_symbols(exchanges, export_formats, output_dir,
+                                            "exchanges", use_home_dir)
+
+            if export_results:
+                click.echo("\nExported exchanges to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo(
+                    "\nFailed to export exchanges. Check logs for details.")
+
+    except Exception as e:
+        logger.error(f"Error fetching exchanges: {e}", exc_info=True)
+        click.echo(f"Error fetching exchanges: {e}")
+
+
+@stock.group()
+def forex():
+    """Commands for exploring forex currency pairs."""
+    pass
+
+
+@forex.command(name="pairs")
+@click.option("--base", "-b", help="Filter by base currency (e.g., 'USD')")
+@click.option("--quote", "-q", help="Filter by quote currency (e.g., 'EUR')")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_forex_pairs(base, quote, limit, export, output_dir, use_home_dir):
+    """
+    List available forex currency pairs with optional filtering.
+
+    Examples:
+    \b
+    # List all forex pairs (limited to 100 by default)
+    stockcli stock forex pairs
+
+    # List forex pairs with USD as base currency
+    stockcli stock forex pairs --base USD
+
+    # List forex pairs with EUR as quote currency
+    stockcli stock forex pairs --quote EUR
+
+    # Export all forex pairs to CSV
+    stockcli stock forex pairs --export csv --limit 0
+    """
+    from app.utils.display import display_forex_pairs_table, create_progress_spinner
+    from app.models.forex import ForexPair
+
+    try:
+        # Show a spinner while fetching forex pairs
+        with create_progress_spinner(description="Fetching forex pairs...") as progress:
+            task = progress.add_task("Fetching forex pairs...", total=None)
+
+            # Fetch forex pairs with provided filters
+            response = client.get_forex_pairs(
+                currency_base=base,
+                currency_quote=quote
+            )
+
+        # Convert API response to ForexPair objects
+        forex_pairs = [ForexPair.from_api_response(item) for item in response]
+
+        # Apply display limit if specified and non-zero
+        display_limit = None if limit == 0 else limit
+
+        # Display the forex pairs
+        display_forex_pairs_table(forex_pairs, display_limit)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Use all forex pairs for export regardless of display limit
+            from app.utils.export import export_symbols
+            export_results = export_symbols(forex_pairs, export_formats, output_dir,
+                                            "forex_pairs", use_home_dir)
+
+            if export_results:
+                click.echo("\nExported forex pairs to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo(
+                    "\nFailed to export forex pairs. Check logs for details.")
+
+    except Exception as e:
+        logger.error(f"Error fetching forex pairs: {e}", exc_info=True)
+        click.echo(f"Error fetching forex pairs: {e}")
+
+
+@forex.command(name="currencies")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_currencies(export, output_dir, use_home_dir):
+    """
+    List available currencies.
+
+    Examples:
+    \b
+    # List all currencies
+    stockcli stock forex currencies
+
+    # Export all currencies to JSON
+    stockcli stock forex currencies --export json
+    """
+    from app.utils.display import display_currencies_table, create_progress_spinner
+    from app.models.symbol import Currency
+
+    try:
+        # Show a spinner while fetching currencies
+        with create_progress_spinner(description="Fetching currencies...") as progress:
+            task = progress.add_task("Fetching currencies...", total=None)
+
+            # Fetch currencies
+            response = client.get_currencies()
+
+        # Convert API response to Currency objects
+        currencies = [Currency.from_api_response(item) for item in response]
+
+        # Display the currencies
+        display_currencies_table(currencies)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            from app.utils.export import export_symbols
+            export_results = export_symbols(currencies, export_formats, output_dir,
+                                            "currencies", use_home_dir)
+
+            if export_results:
+                click.echo("\nExported currencies to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo(
+                    "\nFailed to export currencies. Check logs for details.")
+
+    except Exception as e:
+        logger.error(f"Error fetching currencies: {e}", exc_info=True)
+        click.echo(f"Error fetching currencies: {e}")
