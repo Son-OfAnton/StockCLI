@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional, Dict, Any, ClassVar, Union
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -131,6 +132,53 @@ class Quote:
             logger.error(f"Failed to parse quote data: {e}", exc_info=True)
             raise ValueError(f"Failed to parse quote data: {e}") from e
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the quote to a dictionary."""
+        return {
+            "symbol": self.symbol,
+            "price": self.price,
+            "change": self.change,
+            "change_percent": self.change_percent,
+            "timestamp": self.timestamp.isoformat(),
+            "volume": self.volume,
+            "name": self.name,
+            "currency": self.currency,
+            "open": self.open_price,
+            "high": self.high_price,
+            "low": self.low_price,
+            "previous_close": self.previous_close,
+            "fifty_two_week_high": self.fifty_two_week_high,
+            "fifty_two_week_low": self.fifty_two_week_low,
+        }
+        
+    def to_csv_row(self) -> Dict[str, str]:
+        """Convert the quote to a CSV row (dictionary with string values)."""
+        return {
+            "symbol": self.symbol,
+            "price": f"{self.price:.2f}" if self.price is not None else "",
+            "change": f"{self.change:.2f}" if self.change is not None else "",
+            "change_percent": f"{self.change_percent:.2f}" if self.change_percent is not None else "",
+            "timestamp": self.timestamp.isoformat() if self.timestamp else "",
+            "volume": f"{self.volume}" if self.volume is not None else "",
+            "name": self.name if self.name else "",
+            "currency": self.currency if self.currency else "",
+            "open": f"{self.open_price:.2f}" if self.open_price is not None else "",
+            "high": f"{self.high_price:.2f}" if self.high_price is not None else "",
+            "low": f"{self.low_price:.2f}" if self.low_price is not None else "",
+            "previous_close": f"{self.previous_close:.2f}" if self.previous_close is not None else "",
+            "fifty_two_week_high": f"{self.fifty_two_week_high:.2f}" if self.fifty_two_week_high is not None else "",
+            "fifty_two_week_low": f"{self.fifty_two_week_low:.2f}" if self.fifty_two_week_low is not None else "",
+        }
+    
+    @staticmethod
+    def get_csv_header() -> List[str]:
+        """Get the CSV header for quote data."""
+        return [
+            "symbol", "price", "change", "change_percent", "timestamp", 
+            "volume", "name", "currency", "open", "high", "low", 
+            "previous_close", "fifty_two_week_high", "fifty_two_week_low"
+        ]
+        
     def __repr__(self) -> str:
         return (f"Quote(symbol='{self.symbol}', price={self.price}, "
                 f"change={self.change}, change_percent={self.change_percent})")
@@ -145,6 +193,33 @@ class HistoricalBar:
     low: float
     close: float
     volume: Optional[int] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the bar to a dictionary."""
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "open": self.open,
+            "high": self.high,
+            "low": self.low,
+            "close": self.close,
+            "volume": self.volume,
+        }
+        
+    def to_csv_row(self) -> Dict[str, str]:
+        """Convert the bar to a CSV row."""
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "open": f"{self.open:.2f}",
+            "high": f"{self.high:.2f}",
+            "low": f"{self.low:.2f}",
+            "close": f"{self.close:.2f}",
+            "volume": f"{self.volume}" if self.volume is not None else "",
+        }
+
+    @staticmethod
+    def get_csv_header() -> List[str]:
+        """Get the CSV header for historical bar data."""
+        return ["timestamp", "open", "high", "low", "close", "volume"]
 
 
 @dataclass
@@ -186,6 +261,15 @@ class TimeSeries:
             bars=bars,
             currency=currency
         )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the time series to a dictionary."""
+        return {
+            "symbol": self.symbol,
+            "interval": self.interval,
+            "currency": self.currency,
+            "bars": [bar.to_dict() for bar in self.bars],
+        }
 
 
 @dataclass
@@ -228,3 +312,19 @@ class TechnicalIndicator:
                 if k not in ['symbol', 'indicator', 'exchange']
             }
         )
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert the indicator to a dictionary."""
+        data = []
+        for i, (ts, val) in enumerate(zip(self.timestamps, self.values)):
+            data.append({
+                "timestamp": ts.isoformat(),
+                "value": val,
+            })
+            
+        return {
+            "symbol": self.symbol,
+            "indicator": self.indicator,
+            "parameters": self.parameters,
+            "data": data,
+        }

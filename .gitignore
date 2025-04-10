@@ -1,7 +1,7 @@
 /GDrive
 .env
 .env.test
-stock_cli.log
+*.log
 stockcli.egg-info/
 
 # Byte-compiled / optimized / DLL files
