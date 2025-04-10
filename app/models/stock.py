@@ -5,6 +5,9 @@ Data models for stock information.
 from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional, Dict, Any, ClassVar, Union
+import logging
+
+logger = logging.getLogger(__name__)
 
 class Quote:
     """Model for a stock quote."""
@@ -43,39 +46,89 @@ class Quote:
     @classmethod
     def from_api_response(cls, data: Dict[str, Any]) -> 'Quote':
         """Create a Quote instance from TwelveData API response."""
+        logger.debug(f"Parsing quote data: {data}")
+        
         # Handle case where the API returns a list of quotes
         if isinstance(data, list):
             if len(data) == 0:
                 raise ValueError("Empty quotes list received from API")
             data = data[0]  # Take the first quote
             
+        # Check if required fields are present
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected dict, got {type(data)}")
+            
+        if 'symbol' not in data:
+            raise ValueError("Quote data missing 'symbol' field")
+        
         # Parse the timestamp
         timestamp_str = data.get('datetime')
         try:
-            timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-        except (ValueError, AttributeError):
-            # If timestamp parsing fails, use current time
+            if timestamp_str:
+                # Try to parse ISO format
+                timestamp = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            else:
+                # If no timestamp provided, use current time
+                timestamp = datetime.now()
+        except (ValueError, AttributeError) as e:
+            logger.warning(f"Failed to parse timestamp '{timestamp_str}': {e}")
             timestamp = datetime.now()
         
         # Extract required and optional fields
         try:
+            # Handle different field names that might be used in the API
+            price = None
+            for field in ['close', 'price', 'last']:
+                if field in data and data[field]:
+                    try:
+                        price = float(data[field])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+            
+            if price is None:
+                raise ValueError("No valid price field found in quote data")
+                
+            # Get change and percent change
+            change = 0.0
+            change_percent = 0.0
+            
+            # Try different field names for change
+            for field in ['change', 'price_change']:
+                if field in data and data[field]:
+                    try:
+                        change = float(data[field])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+            
+            # Try different field names for percent change
+            for field in ['percent_change', 'change_percent', 'change_percentage']:
+                if field in data and data[field]:
+                    try:
+                        change_percent = float(data[field])
+                        break
+                    except (ValueError, TypeError):
+                        pass
+            
             return cls(
-                symbol=data.get('symbol', ''),
-                price=float(data.get('close', 0.0)),
-                change=float(data.get('change', 0.0)),
-                change_percent=float(data.get('percent_change', 0.0)),
+                symbol=data['symbol'],
+                price=price,
+                change=change,
+                change_percent=change_percent,
                 timestamp=timestamp,
-                volume=int(data.get('volume', 0)) if data.get('volume') else None,
+                volume=int(data['volume']) if 'volume' in data and data['volume'] else None,
                 name=data.get('name'),
                 currency=data.get('currency', 'USD'),
-                open_price=float(data.get('open')) if data.get('open') else None,
-                high_price=float(data.get('high')) if data.get('high') else None,
-                low_price=float(data.get('low')) if data.get('low') else None,
-                previous_close=float(data.get('previous_close')) if data.get('previous_close') else None,
-                fifty_two_week_high=float(data.get('fifty_two_week_high')) if data.get('fifty_two_week_high') else None,
-                fifty_two_week_low=float(data.get('fifty_two_week_low')) if data.get('fifty_two_week_low') else None,
+                open_price=float(data['open']) if 'open' in data and data['open'] else None,
+                high_price=float(data['high']) if 'high' in data and data['high'] else None,
+                low_price=float(data['low']) if 'low' in data and data['low'] else None,
+                previous_close=float(data['previous_close']) if 'previous_close' in data and data['previous_close'] else None,
+                fifty_two_week_high=float(data['fifty_two_week_high']) if 'fifty_two_week_high' in data and data['fifty_two_week_high'] else None,
+                fifty_two_week_low=float(data['fifty_two_week_low']) if 'fifty_two_week_low' in data and data['fifty_two_week_low'] else None,
             )
         except (ValueError, TypeError) as e:
+            logger.error(f"Failed to parse quote data: {e}", exc_info=True)
             raise ValueError(f"Failed to parse quote data: {e}") from e
 
     def __repr__(self) -> str:
@@ -124,6 +177,7 @@ class TimeSeries:
                     volume=int(bar_data.get('volume')) if bar_data.get('volume') else None
                 ))
             except (ValueError, AttributeError) as e:
+                logger.warning(f"Skipping invalid bar data: {e}")
                 continue
                 
         return cls(
@@ -160,7 +214,8 @@ class TechnicalIndicator:
                     if key in item:
                         values.append(float(item[key]))
                         break
-            except (ValueError, TypeError):
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Skipping invalid indicator data: {e}")
                 continue
                 
         return cls(
