@@ -10,7 +10,7 @@ from typing import List, Optional, Union
 from datetime import datetime
 from pathlib import Path
 
-from app.api.twelve_data import client
+from app.api.twelve_data import TwelveDataAPIError, client
 from app.models.bond import Bond
 from app.models.stock import Quote
 from app.utils.display import display_bonds, display_bonds_detailed
@@ -1182,30 +1182,9 @@ def bonds():
               help="Directory to save exported files")
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
-def list_bonds(type, exchange, country, search, limit, detailed,
-               export, output_dir, use_home_dir):
-    """List available bonds with optional filtering.
-
-    Examples:
-    \b
-    # List all bonds
-    stockcli stock bonds list
-
-    # Filter by bond type
-    stockcli stock bonds list --type government
-
-    # Filter by exchange
-    stockcli stock bonds list --exchange NYSE
-
-    # Search by name or symbol
-    stockcli stock bonds list --search Treasury
-
-    # Show detailed information
-    stockcli stock bonds list --detailed
-
-    # Export to JSON
-    stockcli stock bonds list --export json
-    """
+def list_bonds(type, exchange, country, search, limit, detailed, 
+             export, output_dir, use_home_dir):
+    """List available bonds with optional filtering."""
     try:
         # Fetch bond data with filters
         bond_data = client.get_bonds(
@@ -1214,24 +1193,24 @@ def list_bonds(type, exchange, country, search, limit, detailed,
             country=country,
             symbol=search
         )
-
+        
         # Convert API data to Bond objects
         bonds = [Bond.from_api_response(data) for data in bond_data]
-
+        
         # Apply limit if specified
         if limit > 0 and len(bonds) > limit:
             bonds = bonds[:limit]
-
+            
         if not bonds:
             click.echo("No bonds found matching the criteria.")
             return
-
+            
         # Display bonds
         if detailed:
             display_bonds_detailed(bonds)
         else:
             display_bonds(bonds)
-
+            
         # Export if requested
         if export:
             export_formats = []
@@ -1269,7 +1248,12 @@ def list_bonds(type, exchange, country, search, limit, detailed,
                 click.echo("\nExported bonds to:")
                 for fmt, path in export_results.items():
                     click.echo(f"  {fmt.upper()}: {path}")
-
+            
+    except TwelveDataAPIError as e:
+        logger.error(f"API error fetching bonds: {e}", exc_info=True)
+        click.echo(f"Error from TwelveData API: {e}")
+        click.echo("If the bonds endpoint is not available in your API plan, "
+                 "you may need to upgrade your subscription.")
     except Exception as e:
         logger.error(f"Error fetching bonds: {e}", exc_info=True)
         click.echo(f"Error fetching bonds: {e}")
