@@ -12,9 +12,10 @@ from pathlib import Path
 
 from app.api.twelve_data import TwelveDataAPIError, client
 from app.models.bond import Bond
+from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF
 from app.models.stock import Quote
-from app.utils.display import display_bonds, display_bonds_detailed, display_etfs, display_etfs_detailed
+from app.utils.display import display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_etfs, display_etfs_detailed
 from app.utils.helpers import (
     display_quotes_table, clear_screen
 )
@@ -1687,3 +1688,263 @@ def get_etf_info(symbol, export, output_dir, use_home_dir):
     except Exception as e:
         logger.error(f"Error fetching ETF information: {e}", exc_info=True)
         click.echo(f"Error fetching ETF information: {e}")
+
+
+@stock.group(name="commodities")
+def commodities():
+    """Commands for exploring available commodity trading pairs."""
+    pass
+
+
+@commodities.command(name="list")
+@click.option("--group", "-g", help="Filter by commodity group (e.g., 'precious_metals', 'energy')")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_commodity_pairs(group, exchange, search, limit, detailed, 
+                        export, output_dir, use_home_dir):
+    """List available commodity trading pairs with optional filtering.
+
+    Examples:
+    \b
+    # List all commodity pairs
+    stockcli stock commodities list
+
+    # Filter by commodity group
+    stockcli stock commodities list --group precious_metals
+
+    # Filter by exchange
+    stockcli stock commodities list --exchange COMEX
+
+    # Search by symbol
+    stockcli stock commodities list --search "GOLD"
+
+    # Show detailed information
+    stockcli stock commodities list --detailed
+
+    # Export to JSON
+    stockcli stock commodities list --export json
+    """
+    try:
+        # Fetch commodity pair data with filters
+        commodities_data = client.get_commodity_pairs(
+            commodity_group=group,
+            exchange=exchange,
+            symbol=search
+        )
+        
+        # Convert API data to CommodityPair objects
+        commodity_pairs = [CommodityPair.from_api_response(data) for data in commodities_data]
+        
+        # Apply limit if specified
+        if limit > 0 and len(commodity_pairs) > limit:
+            commodity_pairs = commodity_pairs[:limit]
+            
+        if not commodity_pairs:
+            click.echo("No commodity pairs found matching the criteria.")
+            return
+            
+        # Display commodity pairs
+        if detailed:
+            display_commodity_pairs_detailed(commodity_pairs)
+        else:
+            display_commodity_pairs(commodity_pairs)
+            
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+                
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                # If a custom output directory is provided, use it
+                export_output_dir = Path(output_dir).expanduser().resolve()
+                logger.debug(f"Using custom export directory: {export_output_dir}")
+            elif use_home_dir:
+                # If --use-home-dir flag is set, use home directory
+                export_output_dir = get_home_export_dir()
+                logger.debug(f"Using home directory for exports: {export_output_dir}")
+            else:
+                # Otherwise, use the default (project) directory
+                export_output_dir = get_default_export_dir()
+                logger.debug(f"Using default project export directory: {export_output_dir}")
+                
+            from app.utils.export import export_items
+            export_results = export_items(
+                commodity_pairs, export_formats, export_output_dir, "commodities"
+            )
+            
+            if export_results:
+                click.echo("\nExported commodity pairs to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            
+    except TwelveDataAPIError as e:
+        logger.error(f"API error fetching commodity pairs: {e}", exc_info=True)
+        click.echo(f"Error from TwelveData API: {e}")
+    except Exception as e:
+        logger.error(f"Error fetching commodity pairs: {e}", exc_info=True)
+        click.echo(f"Error fetching commodity pairs: {e}")
+
+
+@commodities.command(name="groups")
+def list_commodity_groups():
+    """List available commodity groups with descriptions.
+
+    Examples:
+    \b
+    # List commodity groups
+    stockcli stock commodities groups
+    """
+    try:
+        commodity_groups_data = client.get_commodity_groups()
+        
+        # Display commodity groups
+        if commodity_groups_data:
+            # Create CommodityGroup objects
+            commodity_groups = [
+                CommodityGroup(
+                    name=data['name'],
+                    description=data['description'],
+                    examples=data['examples']
+                ) for data in commodity_groups_data
+            ]
+            
+            display_commodity_groups(commodity_groups)
+        else:
+            click.echo("No commodity groups found.")
+            
+    except Exception as e:
+        logger.error(f"Error fetching commodity groups: {e}", exc_info=True)
+        click.echo(f"Error fetching commodity groups: {e}")
+
+
+@commodities.command(name="precious-metals")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_precious_metals(exchange, search, limit, detailed,
+                        export, output_dir, use_home_dir):
+    """List precious metals commodity pairs with optional filtering.
+
+    Examples:
+    \b
+    # List all precious metals pairs
+    stockcli stock commodities precious-metals
+
+    # Search for gold specifically
+    stockcli stock commodities precious-metals --search gold
+    """
+    # Call the general list_commodity_pairs function with 'precious_metals' group
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_commodity_pairs,
+        group="precious_metals",
+        exchange=exchange,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@commodities.command(name="energy")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_energy_commodities(exchange, search, limit, detailed,
+                          export, output_dir, use_home_dir):
+    """List energy commodity pairs with optional filtering.
+
+    Examples:
+    \b
+    # List all energy commodity pairs
+    stockcli stock commodities energy
+
+    # Search for oil specifically
+    stockcli stock commodities energy --search oil
+    """
+    # Call the general list_commodity_pairs function with 'energy' group
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_commodity_pairs,
+        group="energy",
+        exchange=exchange,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@commodities.command(name="agriculture")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_agricultural_commodities(exchange, search, limit, detailed,
+                               export, output_dir, use_home_dir):
+    """List agricultural commodity pairs with optional filtering.
+
+    Examples:
+    \b
+    # List all agricultural commodity pairs
+    stockcli stock commodities agriculture
+
+    # Search for wheat specifically
+    stockcli stock commodities agriculture --search wheat
+    """
+    # Call the general list_commodity_pairs function with 'agriculture' group
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_commodity_pairs,
+        group="agriculture",
+        exchange=exchange,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )

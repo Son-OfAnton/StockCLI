@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.box import Box
 
 from app.models.bond import Bond
+from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF
 from app.models.symbol import Symbol, Exchange
 
@@ -350,7 +351,6 @@ def display_bonds(bonds: List[Bond]) -> None:
         title=f"Bonds ({len(bonds)})",
         show_header=True,
         header_style="bold blue",
-        box=Box.SIMPLE
     )
 
     # Add columns to the table
@@ -454,7 +454,6 @@ def display_etfs(etfs: List[ETF]) -> None:
         title=f"ETFs ({len(etfs)})",
         show_header=True, 
         header_style="bold blue",
-        # box=Box.SIMPLE
     )
     
     # Add columns to the table
@@ -549,7 +548,6 @@ def display_etfs_detailed(etfs: List[ETF]) -> None:
             # Create a panel for the description to get nice wrapping
             description_panel = Panel(
                 description_text,
-                # box=Box.SIMPLE,
                 padding=(0, 1, 0, 1),
                 expand=False,
                 width=80
@@ -572,4 +570,153 @@ def display_etfs_detailed(etfs: List[ETF]) -> None:
         
         # Add a newline between ETFs except for the last one
         if etf != etfs[-1]:
+            console.print("")
+
+
+def display_commodity_pairs(commodity_pairs: List[CommodityPair]) -> None:
+    """Display a list of commodity pairs in a table format."""
+    if not commodity_pairs:
+        click.echo("No commodity pairs to display.")
+        return
+
+    # Create a Rich table
+    table = Table(
+        title=f"Commodity Pairs ({len(commodity_pairs)})",
+        show_header=True, 
+        header_style="bold blue",
+    )
+    
+    # Add columns to the table
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Base", style="green")
+    table.add_column("Quote")
+    table.add_column("Group", style="yellow")
+    table.add_column("Exchanges")
+    table.add_column("Active", justify="center")
+    
+    # Add rows for each commodity pair
+    for pair in commodity_pairs:
+        # Format the exchanges list for display
+        exchanges = ", ".join(pair.available_exchanges[:3])
+        if len(pair.available_exchanges) > 3:
+            exchanges += f" +{len(pair.available_exchanges) - 3} more"
+        
+        # Get a nice name for the commodity group
+        group = pair.commodity_group
+        if group:
+            # Convert snake_case to Title Case
+            group = " ".join(word.capitalize() for word in group.split("_"))
+        else:
+            group = "Other"
+        
+        # Format is_active as a checkmark or X
+        active = "✓" if pair.is_active else "✗"
+        active_style = "green" if pair.is_active else "red"
+        
+        table.add_row(
+            pair.symbol,
+            pair.base_commodity,
+            pair.quote_currency,
+            group,
+            exchanges,
+            Text(active, style=active_style)
+        )
+    
+    # Print the table
+    console = Console()
+    console.print(table)
+
+
+def display_commodity_pairs_detailed(commodity_pairs: List[CommodityPair]) -> None:
+    """Display detailed information for a list of commodity pairs."""
+    if not commodity_pairs:
+        click.echo("No commodity pairs to display.")
+        return
+    
+    console = Console()
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Group the pairs by commodity group for better organization
+    pairs_by_group = {}
+    for pair in commodity_pairs:
+        group = pair.commodity_group or "other"
+        if group not in pairs_by_group:
+            pairs_by_group[group] = []
+        pairs_by_group[group].append(pair)
+    
+    # Display pairs grouped by commodity group
+    for group_name, pairs in pairs_by_group.items():
+        # Convert snake_case to Title Case for display
+        display_group = " ".join(word.capitalize() for word in group_name.split("_"))
+        
+        # Create a panel group title
+        console.print(f"[bold]{display_group} Commodities[/bold]\n")
+        
+        for pair in pairs:
+            # Create a table for commodity details
+            grid = Table.grid(padding=0, expand=False)
+            grid.add_column("Field", style="bold cyan", width=18)
+            grid.add_column("Value")
+            
+            # Add rows with commodity details
+            grid.add_row("Symbol:", pair.symbol)
+            grid.add_row("Base Commodity:", pair.base_commodity)
+            grid.add_row("Quote Currency:", pair.quote_currency)
+            grid.add_row("Group:", display_group)
+            grid.add_row("Active:", "Yes" if pair.is_active else "No")
+            
+            if pair.symbol_description:
+                grid.add_row("Description:", pair.symbol_description)
+            
+            # Format the exchanges for display
+            if pair.available_exchanges:
+                grid.add_row("Exchanges:", ", ".join(pair.available_exchanges))
+            
+            # Create a panel containing the grid
+            panel = Panel(
+                grid,
+                title=f"[bold]{pair.symbol}[/bold]",
+                expand=False
+            )
+            
+            # Print the panel with a newline after all except the last one
+            console.print(panel)
+            
+            if pair != pairs[-1]:
+                console.print("")
+        
+        # Add a separator between groups
+        if group_name != list(pairs_by_group.keys())[-1]:
+            console.print("\n" + "─" * 50 + "\n")
+
+
+def display_commodity_groups(commodity_groups: List[CommodityGroup]) -> None:
+    """Display commodity groups with their descriptions."""
+    if not commodity_groups:
+        click.echo("No commodity groups to display.")
+        return
+    
+    console = Console()
+    
+    # Display each commodity group
+    for group in commodity_groups:
+        # Convert snake_case to Title Case
+        display_name = " ".join(word.capitalize() for word in group.name.split("_"))
+        
+        # Create a panel for each group
+        panel_content = Text()
+        panel_content.append(f"{group.description}\n\n", style="italic")
+        panel_content.append("Example symbols: ", style="dim")
+        panel_content.append(", ".join(group.examples), style="cyan")
+        
+        panel = Panel(
+            panel_content,
+            title=f"[bold]{display_name}[/bold]",
+            expand=False
+        )
+        
+        console.print(panel)
+        
+        # Add spacing between panels
+        if group != commodity_groups[-1]:
             console.print("")

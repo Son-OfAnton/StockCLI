@@ -673,6 +673,143 @@ def etf_asset_classes_shortcut():
     ctx.invoke(list_etf_asset_classes)
 
 
+@cli.group(name="commodities")
+def commodities_shortcut():
+    """Commands for exploring available commodity trading pairs."""
+    pass
+
+
+@commodities_shortcut.command(name="list")
+@click.option("--group", "-g", help="Filter by commodity group (e.g., 'precious_metals', 'energy')")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_commodities_shortcut(group, exchange, search, limit, detailed,
+                            export, output_dir, use_home_dir):
+    """List available commodity trading pairs with optional filtering."""
+    from app.cli.commands import list_commodity_pairs
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_commodity_pairs,
+        group=group,
+        exchange=exchange,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@commodities_shortcut.command(name="groups")
+def commodity_groups_shortcut():
+    """List available commodity groups with descriptions."""
+    from app.cli.commands import list_commodity_groups
+    
+    ctx = click.get_current_context()
+    ctx.invoke(list_commodity_groups)
+
+
+@commodities_shortcut.command(name="precious-metals")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def precious_metals_shortcut(exchange, search, limit, detailed,
+                           export, output_dir, use_home_dir):
+    """List precious metals commodity pairs with optional filtering."""
+    from app.cli.commands import list_precious_metals
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_precious_metals,
+        exchange=exchange,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@commodities_shortcut.command(name="energy")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def energy_commodities_shortcut(exchange, search, limit, detailed,
+                             export, output_dir, use_home_dir):
+    """List energy commodity pairs with optional filtering."""
+    from app.cli.commands import list_energy_commodities
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_energy_commodities,
+        exchange=exchange,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@commodities_shortcut.command(name="agriculture")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--search", "-s", help="Search by symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of pairs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def agricultural_commodities_shortcut(exchange, search, limit, detailed,
+                                  export, output_dir, use_home_dir):
+    """List agricultural commodity pairs with optional filtering."""
+    from app.cli.commands import list_agricultural_commodities
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_agricultural_commodities,
+        exchange=exchange,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
 def main():
     """Main entry point for the CLI app."""
     try:

@@ -9,6 +9,8 @@ from typing import Dict, List, Any, Optional, Union
 from urllib.parse import urljoin
 from dotenv import load_dotenv
 
+from app.models.commodity import CommodityPair
+
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -703,4 +705,158 @@ class TwelveDataClient:
         """
         return self.get_etfs('fixed_income', exchange, country, symbol)
 
+    def get_commodity_pairs(self, 
+                      commodity_group: Optional[str] = None,
+                      exchange: Optional[str] = None, 
+                      symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Fetch available commodity pairs from the TwelveData API.
+        
+        Args:
+            commodity_group: Filter by commodity group (e.g., 'precious_metals', 'energy')
+            exchange: Filter by exchange
+            symbol: Filter by symbol (partial match)
+            
+        Returns:
+            List of available commodity pairs with their details
+        """
+        endpoint = "/commodities"  # Direct commodities endpoint
+        params = {}
+        
+        if exchange:
+            params['exchange'] = exchange
+        if symbol:
+            params['symbol'] = symbol
+            
+        logger.debug(f"Fetching available commodity pairs with filters: {params}")
+        
+        try:
+            result = self._make_request(endpoint, params)
+            
+            # Check if data is in the expected format
+            if not isinstance(result, dict) or 'data' not in result:
+                logger.error(f"Unexpected response format for commodities: {result}")
+                raise TwelveDataAPIError("Unexpected response format for commodities endpoint")
+                
+            commodities_data = result['data']
+            
+            # Filter by commodity group if requested
+            if commodity_group:
+                # Since the API might not have a direct commodity_group filter,
+                # we'll filter the results in the client
+                filtered_data = []
+                for item in commodities_data:
+                    # Create a CommodityPair to determine its group
+                    pair = CommodityPair.from_api_response(item)
+                    if pair.commodity_group == commodity_group:
+                        filtered_data.append(item)
+                return filtered_data
+                
+            return commodities_data
+        except TwelveDataAPIError as e:
+            # If the commodities endpoint is not available, fall back to a more general approach
+            logger.warning(f"Commodity-specific endpoint failed: {e}. Falling back to alternative method.")
+            return self._get_commodity_pairs_via_alternative(commodity_group, exchange, symbol)
+
+    def _get_commodity_pairs_via_alternative(self,
+                                        commodity_group: Optional[str] = None,
+                                        exchange: Optional[str] = None,
+                                        symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Alternative method to fetch commodity pairs if the dedicated endpoint is not available.
+        Uses the symbol/price endpoint with common commodity symbols.
+        """
+        # Common commodity symbols
+        commodity_symbols = {
+            "precious_metals": ["XAU/USD", "XAG/USD", "XPT/USD", "XPD/USD", "GOLD/USD", "SILVER/USD"],
+            "energy": ["CL/USD", "BRENT/USD", "WTI/USD", "NG/USD", "OIL/USD"],
+            "agriculture": ["ZC/USD", "ZW/USD", "ZS/USD", "CORN/USD", "WHEAT/USD", "SOYBEAN/USD", 
+                        "COTTON/USD", "SUGAR/USD", "COFFEE/USD", "COCOA/USD"],
+            "industrial_metals": ["HG/USD", "COPPER/USD", "ALU/USD", "ZINC/USD", "NICKEL/USD"]
+        }
+        
+        # If a specific commodity group is requested, use only those symbols
+        symbol_list = []
+        if commodity_group and commodity_group in commodity_symbols:
+            symbol_list = commodity_symbols[commodity_group]
+        else:
+            # Otherwise, use all common commodity symbols
+            for symbols in commodity_symbols.values():
+                symbol_list.extend(symbols)
+        
+        # If a specific symbol is requested, filter the list
+        if symbol:
+            symbol_list = [s for s in symbol_list if symbol.upper() in s.upper()]
+        
+        # If no symbols remain after filtering, return an empty list
+        if not symbol_list:
+            return []
+        
+        # Batch the symbols to avoid making too many requests
+        batch_size = 8  # TwelveData allows multiple symbols in one request
+        batches = [symbol_list[i:i + batch_size] for i in range(0, len(symbol_list), batch_size)]
+        
+        all_results = []
+        for batch in batches:
+            symbols_str = ",".join(batch)
+            endpoint = "/price"
+            params = {"symbol": symbols_str}
+            
+            if exchange:
+                params['exchange'] = exchange
+                
+            try:
+                result = self._make_request(endpoint, params)
+                
+                # Convert result to a list of commodity pairs
+                if isinstance(result, dict):
+                    for symbol, data in result.items():
+                        if isinstance(data, dict) and 'price' in data:
+                            # Create a basic commodity pair entry
+                            commodity_entry = {
+                                "symbol": symbol,
+                                "available_exchanges": [exchange] if exchange else ["GLOBAL"],
+                                "is_active": True
+                            }
+                            all_results.append(commodity_entry)
+            except TwelveDataAPIError as e:
+                logger.warning(f"Error fetching batch of commodity symbols: {e}")
+                continue
+        
+        return all_results
+
+    def get_commodity_groups(self) -> List[Dict[str, Any]]:
+        """
+        Get available commodity groups with descriptions.
+        
+        Returns:
+            List of available commodity groups
+        """
+        # Create a list of standard commodity groups
+        commodity_groups = [
+            {
+                "name": "precious_metals",
+                "description": "Precious metals like gold, silver, platinum, and palladium",
+                "examples": ["XAU/USD", "XAG/USD", "XPT/USD", "XPD/USD"]
+            },
+            {
+                "name": "energy",
+                "description": "Energy commodities like crude oil, natural gas, and heating oil",
+                "examples": ["CL/USD", "BRENT/USD", "WTI/USD", "NG/USD"]
+            },
+            {
+                "name": "agriculture",
+                "description": "Agricultural commodities like corn, wheat, soybeans, and coffee",
+                "examples": ["CORN/USD", "WHEAT/USD", "SOYBEAN/USD", "COFFEE/USD"]
+            },
+            {
+                "name": "industrial_metals",
+                "description": "Industrial metals like copper, aluminum, zinc, and nickel",
+                "examples": ["COPPER/USD", "ALU/USD", "ZINC/USD", "NICKEL/USD"]
+            }
+        ]
+        
+        return commodity_groups
+
+# Initialize the TwelveData client
 client = TwelveDataClient()
