@@ -2,12 +2,17 @@ certifi==2025.1.31
 charset-normalizer==3.4.1
 click==8.1.8
 idna==3.10
+iniconfig==2.1.0
 markdown-it-py==3.0.0
 mdurl==0.1.2
+packaging==24.2
+pluggy==1.5.0
 Pygments==2.19.1
+pytest==8.3.5
 python-dotenv==1.1.0
 requests==2.32.3
 rich==14.0.0
 setuptools==78.1.0
+-e git+https://github.com/Son-OfAnton/StockCLI.git@2c84dc9f59076d7e57ea42eae0aa019582344272#egg=stockcli
 tabulate==0.9.0
 urllib3==2.3.0
