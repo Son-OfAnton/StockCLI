@@ -14,6 +14,7 @@ from rich.panel import Panel
 from rich.box import Box
 
 from app.models.bond import Bond
+from app.models.etf import ETF
 from app.models.symbol import Symbol, Exchange
 
 # Console setup for rich output
@@ -440,4 +441,135 @@ def display_bonds_detailed(bonds: List[Bond]) -> None:
         # Print the panel with a newline after all except the last one
         console.print(panel)
         if bond != bonds[-1]:
+            console.print("")
+
+def display_etfs(etfs: List[ETF]) -> None:
+    """Display a list of ETFs in a table format."""
+    if not etfs:
+        click.echo("No ETFs to display.")
+        return
+
+    # Create a Rich table
+    table = Table(
+        title=f"ETFs ({len(etfs)})",
+        show_header=True, 
+        header_style="bold blue",
+        # box=Box.SIMPLE
+    )
+    
+    # Add columns to the table
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Name")
+    table.add_column("Asset Class", style="green")
+    table.add_column("Exchange")
+    table.add_column("Expense Ratio (%)", justify="right")
+    table.add_column("Dividend Yield (%)", justify="right")
+    table.add_column("AUM (M)", justify="right")
+    
+    # Add rows for each ETF
+    for etf in etfs:
+        expense = f"{etf.expense_ratio:.3f}" if etf.expense_ratio is not None else "N/A"
+        dividend = f"{etf.dividend_yield:.2f}" if etf.dividend_yield is not None else "N/A"
+        
+        # Convert managed assets to millions for display
+        if etf.managed_assets is not None:
+            aum = f"{etf.managed_assets / 1_000_000:.1f}" 
+        else:
+            aum = "N/A"
+        
+        asset_class = etf.asset_class or "N/A"
+        
+        table.add_row(
+            etf.symbol,
+            etf.name[:40] + ('...' if len(etf.name) > 40 else ''),
+            asset_class,
+            etf.exchange,
+            expense,
+            dividend,
+            aum
+        )
+    
+    # Print the table
+    console = Console()
+    console.print(table)
+    
+
+def display_etfs_detailed(etfs: List[ETF]) -> None:
+    """Display detailed information for a list of ETFs."""
+    if not etfs:
+        click.echo("No ETFs to display.")
+        return
+    
+    console = Console()
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Display each ETF in a panel
+    for etf in etfs:
+        # Create a table for ETF details
+        grid = Table.grid(padding=0, expand=False)
+        grid.add_column("Field", style="bold cyan", width=18)
+        grid.add_column("Value")
+        
+        # Add rows with ETF details
+        grid.add_row("Symbol:", etf.symbol)
+        grid.add_row("Name:", etf.name)
+        grid.add_row("Asset Class:", etf.asset_class or "N/A")
+        grid.add_row("Category:", etf.category or "N/A")
+        grid.add_row("Exchange:", etf.exchange)
+        grid.add_row("Country:", etf.country or "N/A")
+        grid.add_row("Currency:", etf.currency)
+        
+        if etf.fund_family:
+            grid.add_row("Fund Family:", etf.fund_family)
+        
+        if etf.expense_ratio is not None:
+            grid.add_row("Expense Ratio:", f"{etf.expense_ratio:.4f}%")
+            
+        if etf.nav is not None:
+            grid.add_row("NAV:", f"{etf.nav:.2f} {etf.currency}")
+            
+        if etf.dividend_yield is not None:
+            grid.add_row("Dividend Yield:", f"{etf.dividend_yield:.2f}%")
+            
+        if etf.managed_assets is not None:
+            # Format large numbers with commas
+            grid.add_row("Managed Assets:", f"{etf.managed_assets:,.0f} {etf.currency}")
+            
+        if etf.benchmark:
+            grid.add_row("Benchmark:", etf.benchmark)
+            
+        if etf.inception_date:
+            grid.add_row("Inception Date:", etf.inception_date)
+        
+        if etf.description:
+            # Add a new row for description with word wrapping
+            grid.add_row("Description:", "")
+            description_text = Text(etf.description, style="italic")
+            
+            # Create a panel for the description to get nice wrapping
+            description_panel = Panel(
+                description_text,
+                # box=Box.SIMPLE,
+                padding=(0, 1, 0, 1),
+                expand=False,
+                width=80
+            )
+        
+        # Create a panel containing the grid
+        panel = Panel(
+            grid,
+            title=f"[bold]{etf.symbol}[/bold] - {etf.name}",
+            subtitle=f"Data as of {current_time}",
+            expand=False
+        )
+        
+        # Print the panel
+        console.print(panel)
+        
+        # Print the description if it exists
+        if etf.description:
+            console.print(description_panel)
+        
+        # Add a newline between ETFs except for the last one
+        if etf != etfs[-1]:
             console.print("")

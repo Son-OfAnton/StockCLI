@@ -12,8 +12,9 @@ from pathlib import Path
 
 from app.api.twelve_data import TwelveDataAPIError, client
 from app.models.bond import Bond
+from app.models.etf import ETF
 from app.models.stock import Quote
-from app.utils.display import display_bonds, display_bonds_detailed
+from app.utils.display import display_bonds, display_bonds_detailed, display_etfs, display_etfs_detailed
 from app.utils.helpers import (
     display_quotes_table, clear_screen
 )
@@ -1364,3 +1365,325 @@ def list_corporate_bonds(exchange, country, search, limit, detailed,
         output_dir=output_dir,
         use_home_dir=use_home_dir
     )
+
+
+
+@stock.group(name="etfs")
+def etfs():
+    """Commands for exploring available ETFs (Exchange-Traded Funds)."""
+    pass
+
+
+@etfs.command(name="list")
+@click.option("--asset-class", "-a", help="Filter by asset class (e.g., 'equity', 'fixed_income')")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of ETFs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--sort-by", type=click.Choice(['symbol', 'expense_ratio', 'managed_assets', 'dividend_yield']),
+              default='symbol', help="Sort results by this field")
+@click.option("--descending", is_flag=True, help="Sort in descending order")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_etfs(asset_class, exchange, country, search, limit, detailed, sort_by, descending,
+              export, output_dir, use_home_dir):
+    """List available ETFs with optional filtering and sorting.
+
+    Examples:
+    \b
+    # List all ETFs
+    stockcli stock etfs list
+
+    # Filter by asset class
+    stockcli stock etfs list --asset-class equity
+
+    # Filter by exchange
+    stockcli stock etfs list --exchange NYSE
+
+    # Search by name or symbol
+    stockcli stock etfs list --search Vanguard
+
+    # Sort by expense ratio (lowest first)
+    stockcli stock etfs list --sort-by expense_ratio
+
+    # Sort by managed assets (highest first)
+    stockcli stock etfs list --sort-by managed_assets --descending
+
+    # Show detailed information
+    stockcli stock etfs list --detailed
+
+    # Export to JSON
+    stockcli stock etfs list --export json
+    """
+    try:
+        # Fetch ETF data with filters
+        etf_data = client.get_etfs(
+            asset_class=asset_class,
+            exchange=exchange,
+            country=country,
+            symbol=search
+        )
+        
+        # Convert API data to ETF objects
+        etfs = [ETF.from_api_response(data) for data in etf_data]
+        
+        # Sort ETFs based on user criteria
+        if sort_by == 'expense_ratio':
+            # Sort by expense ratio, handling None values
+            etfs.sort(key=lambda e: e.expense_ratio if e.expense_ratio is not None else float('inf'), 
+                     reverse=descending)
+        elif sort_by == 'managed_assets':
+            # Sort by managed assets, handling None values
+            etfs.sort(key=lambda e: e.managed_assets if e.managed_assets is not None else 0.0, 
+                     reverse=descending)
+        elif sort_by == 'dividend_yield':
+            # Sort by dividend yield, handling None values
+            etfs.sort(key=lambda e: e.dividend_yield if e.dividend_yield is not None else 0.0, 
+                     reverse=descending)
+        else:
+            # Default sort by symbol
+            etfs.sort(key=lambda e: e.symbol, 
+                     reverse=descending)
+        
+        # Apply limit if specified
+        if limit > 0 and len(etfs) > limit:
+            etfs = etfs[:limit]
+            
+        if not etfs:
+            click.echo("No ETFs found matching the criteria.")
+            return
+            
+        # Display ETFs
+        if detailed:
+            display_etfs_detailed(etfs)
+        else:
+            display_etfs(etfs)
+            
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+                
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                # If a custom output directory is provided, use it
+                export_output_dir = Path(output_dir).expanduser().resolve()
+                logger.debug(f"Using custom export directory: {export_output_dir}")
+            elif use_home_dir:
+                # If --use-home-dir flag is set, use home directory
+                export_output_dir = get_home_export_dir()
+                logger.debug(f"Using home directory for exports: {export_output_dir}")
+            else:
+                # Otherwise, use the default (project) directory
+                export_output_dir = get_default_export_dir()
+                logger.debug(f"Using default project export directory: {export_output_dir}")
+                
+            from app.utils.export import export_items
+            export_results = export_items(
+                etfs, export_formats, export_output_dir, "etfs"
+            )
+            
+            if export_results:
+                click.echo("\nExported ETFs to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            
+    except TwelveDataAPIError as e:
+        logger.error(f"API error fetching ETFs: {e}", exc_info=True)
+        click.echo(f"Error from TwelveData API: {e}")
+        click.echo("If the ETFs endpoint is not available in your API plan, "
+                  "the command will try to use the stocks endpoint as a fallback.")
+    except Exception as e:
+        logger.error(f"Error fetching ETFs: {e}", exc_info=True)
+        click.echo(f"Error fetching ETFs: {e}")
+
+
+@etfs.command(name="asset-classes")
+def list_etf_asset_classes():
+    """List available ETF asset classes.
+
+    Examples:
+    \b
+    # List ETF asset classes
+    stockcli stock etfs asset-classes
+    """
+    try:
+        asset_classes = client.get_etf_asset_classes()
+        
+        # Display asset classes
+        if asset_classes:
+            click.echo("Available ETF Asset Classes:")
+            for asset_class in asset_classes:
+                click.echo(f"  - {asset_class}")
+        else:
+            click.echo("No asset classes found.")
+            
+    except Exception as e:
+        logger.error(f"Error fetching ETF asset classes: {e}", exc_info=True)
+        click.echo(f"Error fetching ETF asset classes: {e}")
+
+
+@etfs.command(name="equity")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of ETFs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--sort-by", type=click.Choice(['symbol', 'expense_ratio', 'managed_assets', 'dividend_yield']),
+              default='symbol', help="Sort results by this field")
+@click.option("--descending", is_flag=True, help="Sort in descending order")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_equity_etfs(exchange, country, search, limit, detailed, sort_by, descending,
+                    export, output_dir, use_home_dir):
+    """List equity ETFs with optional filtering.
+
+    Examples:
+    \b
+    # List all equity ETFs
+    stockcli stock etfs equity
+
+    # Filter by country
+    stockcli stock etfs equity --country "United States"
+    """
+    # Call the general list_etfs function with 'equity' asset class
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_etfs,
+        asset_class="equity",
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        sort_by=sort_by,
+        descending=descending,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@etfs.command(name="fixed-income")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of ETFs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--sort-by", type=click.Choice(['symbol', 'expense_ratio', 'managed_assets', 'dividend_yield']),
+              default='symbol', help="Sort results by this field")
+@click.option("--descending", is_flag=True, help="Sort in descending order")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_fixed_income_etfs(exchange, country, search, limit, detailed, sort_by, descending,
+                         export, output_dir, use_home_dir):
+    """List fixed income ETFs (bond ETFs) with optional filtering.
+
+    Examples:
+    \b
+    # List all fixed income ETFs
+    stockcli stock etfs fixed-income
+
+    # Filter by country
+    stockcli stock etfs fixed-income --country "United States"
+    """
+    # Call the general list_etfs function with 'fixed_income' asset class
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_etfs,
+        asset_class="fixed_income",
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        sort_by=sort_by,
+        descending=descending,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@etfs.command(name="info")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_etf_info(symbol, export, output_dir, use_home_dir):
+    """Get detailed information for a specific ETF by symbol.
+
+    Examples:
+    \b
+    # Show detailed information for an ETF
+    stockcli stock etfs info SPY
+
+    # Export ETF information
+    stockcli stock etfs info QQQ --export json
+    """
+    try:
+        # Fetch ETF data for the specific symbol
+        etf_data = client.get_etfs(symbol=symbol)
+        
+        # Check if we found an ETF with this symbol
+        if not etf_data:
+            click.echo(f"No ETF found with symbol: {symbol}")
+            return
+        
+        # Convert API data to ETF object (use the first match)
+        etf = ETF.from_api_response(etf_data[0])
+        
+        # Display the ETF
+        display_etfs_detailed([etf])
+        
+        # Export if requested
+        if export:
+            export_formats = [export]
+                
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+                
+            from app.utils.export import export_items
+            export_results = export_items(
+                [etf], export_formats, export_output_dir, f"etf_{symbol.lower()}"
+            )
+            
+            if export_results:
+                click.echo("\nExported ETF information to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+            
+    except Exception as e:
+        logger.error(f"Error fetching ETF information: {e}", exc_info=True)
+        click.echo(f"Error fetching ETF information: {e}")

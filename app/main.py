@@ -523,6 +523,156 @@ def bond_types_shortcut():
     ctx.invoke(list_bond_types)
 
 
+@cli.group(name="etfs")
+def etfs_shortcut():
+    """Commands for exploring available ETFs (Exchange-Traded Funds)."""
+    pass
+
+
+@etfs_shortcut.command(name="list")
+@click.option("--asset-class", "-a", help="Filter by asset class (e.g., 'equity', 'fixed_income')")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of ETFs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--sort-by", type=click.Choice(['symbol', 'expense_ratio', 'managed_assets', 'dividend_yield']),
+              default='symbol', help="Sort results by this field")
+@click.option("--descending", is_flag=True, help="Sort in descending order")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_etfs_shortcut(asset_class, exchange, country, search, limit, detailed, sort_by, descending,
+                     export, output_dir, use_home_dir):
+    """List available ETFs with optional filtering."""
+    from app.cli.commands import list_etfs
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_etfs,
+        asset_class=asset_class,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        sort_by=sort_by,
+        descending=descending,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@etfs_shortcut.command(name="equity")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of ETFs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--sort-by", type=click.Choice(['symbol', 'expense_ratio', 'managed_assets', 'dividend_yield']),
+              default='symbol', help="Sort results by this field")
+@click.option("--descending", is_flag=True, help="Sort in descending order")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def equity_etfs_shortcut(exchange, country, search, limit, detailed, sort_by, descending,
+                       export, output_dir, use_home_dir):
+    """List equity ETFs with optional filtering."""
+    from app.cli.commands import list_equity_etfs
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_equity_etfs,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        sort_by=sort_by,
+        descending=descending,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@etfs_shortcut.command(name="fixed-income")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of ETFs to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--sort-by", type=click.Choice(['symbol', 'expense_ratio', 'managed_assets', 'dividend_yield']),
+              default='symbol', help="Sort results by this field")
+@click.option("--descending", is_flag=True, help="Sort in descending order")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def fixed_income_etfs_shortcut(exchange, country, search, limit, detailed, sort_by, descending,
+                            export, output_dir, use_home_dir):
+    """List fixed income ETFs (bond ETFs) with optional filtering."""
+    from app.cli.commands import list_fixed_income_etfs
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_fixed_income_etfs,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        sort_by=sort_by,
+        descending=descending,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@etfs_shortcut.command(name="info")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def etf_info_shortcut(symbol, export, output_dir, use_home_dir):
+    """Get detailed information for a specific ETF by symbol."""
+    from app.cli.commands import get_etf_info
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_etf_info,
+        symbol=symbol,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@etfs_shortcut.command(name="asset-classes")
+def etf_asset_classes_shortcut():
+    """List available ETF asset classes."""
+    from app.cli.commands import list_etf_asset_classes
+    
+    ctx = click.get_current_context()
+    ctx.invoke(list_etf_asset_classes)
+
+
 def main():
     """Main entry point for the CLI app."""
     try:
