@@ -410,6 +410,119 @@ def list_mutual_funds_shortcut(exchange, country, search, limit, detailed,
     )
 
 
+@cli.group(name="bonds")
+def bonds_shortcut():
+    """Commands for exploring available bonds (shortcut for 'stock bonds')."""
+    pass
+
+
+@bonds_shortcut.command(name="list")
+@click.option("--type", "-t", help="Filter by bond type (e.g., 'government', 'corporate')")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of bonds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_bonds_shortcut(type, exchange, country, search, limit, detailed,
+                        export, output_dir, use_home_dir):
+    """List available bonds with optional filtering."""
+    from app.cli.commands import list_bonds
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_bonds,
+        type=type,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@bonds_shortcut.command(name="government")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of bonds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def government_bonds_shortcut(exchange, country, search, limit, detailed,
+                              export, output_dir, use_home_dir):
+    """List government bonds with optional filtering."""
+    from app.cli.commands import list_government_bonds
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_government_bonds,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@bonds_shortcut.command(name="corporate")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of bonds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def corporate_bonds_shortcut(exchange, country, search, limit, detailed,
+                             export, output_dir, use_home_dir):
+    """List corporate bonds with optional filtering."""
+    from app.cli.commands import list_corporate_bonds
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_corporate_bonds,
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@bonds_shortcut.command(name="types")
+def bond_types_shortcut():
+    """List available bond types."""
+    from app.cli.commands import list_bond_types
+
+    ctx = click.get_current_context()
+    ctx.invoke(list_bond_types)
+
+
 def main():
     """Main entry point for the CLI app."""
     try:

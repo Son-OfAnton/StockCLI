@@ -11,7 +11,9 @@ from datetime import datetime
 from pathlib import Path
 
 from app.api.twelve_data import client
+from app.models.bond import Bond
 from app.models.stock import Quote
+from app.utils.display import display_bonds, display_bonds_detailed
 from app.utils.helpers import (
     display_quotes_table, clear_screen
 )
@@ -1158,3 +1160,223 @@ def list_mutual_funds(exchange, country, search, limit, detailed,
     except Exception as e:
         logger.error(f"Error fetching mutual funds: {e}", exc_info=True)
         click.echo(f"Error fetching mutual funds: {e}")
+
+
+@stock.group(name="bonds")
+def bonds():
+    """Commands for exploring available bonds."""
+    pass
+
+
+@bonds.command(name="list")
+@click.option("--type", "-t", help="Filter by bond type (e.g., 'government', 'corporate')")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of bonds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_bonds(type, exchange, country, search, limit, detailed,
+               export, output_dir, use_home_dir):
+    """List available bonds with optional filtering.
+
+    Examples:
+    \b
+    # List all bonds
+    stockcli stock bonds list
+
+    # Filter by bond type
+    stockcli stock bonds list --type government
+
+    # Filter by exchange
+    stockcli stock bonds list --exchange NYSE
+
+    # Search by name or symbol
+    stockcli stock bonds list --search Treasury
+
+    # Show detailed information
+    stockcli stock bonds list --detailed
+
+    # Export to JSON
+    stockcli stock bonds list --export json
+    """
+    try:
+        # Fetch bond data with filters
+        bond_data = client.get_bonds(
+            bond_type=type,
+            exchange=exchange,
+            country=country,
+            symbol=search
+        )
+
+        # Convert API data to Bond objects
+        bonds = [Bond.from_api_response(data) for data in bond_data]
+
+        # Apply limit if specified
+        if limit > 0 and len(bonds) > limit:
+            bonds = bonds[:limit]
+
+        if not bonds:
+            click.echo("No bonds found matching the criteria.")
+            return
+
+        # Display bonds
+        if detailed:
+            display_bonds_detailed(bonds)
+        else:
+            display_bonds(bonds)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                # If a custom output directory is provided, use it
+                export_output_dir = Path(output_dir).expanduser().resolve()
+                logger.debug(
+                    f"Using custom export directory: {export_output_dir}")
+            elif use_home_dir:
+                # If --use-home-dir flag is set, use home directory
+                export_output_dir = get_home_export_dir()
+                logger.debug(
+                    f"Using home directory for exports: {export_output_dir}")
+            else:
+                # Otherwise, use the default (project) directory
+                export_output_dir = get_default_export_dir()
+                logger.debug(
+                    f"Using default project export directory: {export_output_dir}")
+
+            from app.utils.export import export_items
+            export_results = export_items(
+                bonds, export_formats, export_output_dir, "bonds"
+            )
+
+            if export_results:
+                click.echo("\nExported bonds to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except Exception as e:
+        logger.error(f"Error fetching bonds: {e}", exc_info=True)
+        click.echo(f"Error fetching bonds: {e}")
+
+
+@bonds.command(name="types")
+def list_bond_types():
+    """List available bond types.
+
+    Examples:
+    \b
+    # List bond types
+    stockcli stock bonds types
+    """
+    try:
+        bond_types = client.get_bond_types()
+
+        # Display bond types
+        if bond_types:
+            click.echo("Available Bond Types:")
+            for bond_type in bond_types:
+                click.echo(f"  - {bond_type}")
+        else:
+            click.echo("No bond types found.")
+
+    except Exception as e:
+        logger.error(f"Error fetching bond types: {e}", exc_info=True)
+        click.echo(f"Error fetching bond types: {e}")
+
+
+@bonds.command(name="government")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of bonds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_government_bonds(exchange, country, search, limit, detailed,
+                          export, output_dir, use_home_dir):
+    """List government bonds with optional filtering.
+
+    Examples:
+    \b
+    # List all government bonds
+    stockcli stock bonds government
+
+    # Filter by country
+    stockcli stock bonds government --country "United States"
+    """
+    # Call the general list_bonds function with 'government' type
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_bonds,
+        type="government",
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@bonds.command(name="corporate")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NYSE')")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--search", "-s", help="Search by symbol or name")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of bonds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_corporate_bonds(exchange, country, search, limit, detailed,
+                         export, output_dir, use_home_dir):
+    """List corporate bonds with optional filtering.
+
+    Examples:
+    \b
+    # List all corporate bonds
+    stockcli stock bonds corporate
+
+    # Filter by country
+    stockcli stock bonds corporate --country "United States"
+    """
+    # Call the general list_bonds function with 'corporate' type
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_bonds,
+        type="corporate",
+        exchange=exchange,
+        country=country,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )

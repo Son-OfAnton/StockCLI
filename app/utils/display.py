@@ -2,13 +2,18 @@
 Utility functions for displaying data in the console.
 """
 
+from datetime import datetime
 import logging
 from typing import List, Dict, Any, Optional
+import click
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.panel import Panel
+from rich.box import Box
 
+from app.models.bond import Bond
 from app.models.symbol import Symbol, Exchange
 
 # Console setup for rich output
@@ -331,3 +336,108 @@ def display_funds_table(funds: List[Any], limit: Optional[int] = None,
         table.add_row(*row)
 
     console.print(table)
+
+
+def display_bonds(bonds: List[Bond]) -> None:
+    """Display a list of bonds in a table format."""
+    if not bonds:
+        click.echo("No bonds to display.")
+        return
+
+    # Create a Rich table
+    table = Table(
+        title=f"Bonds ({len(bonds)})",
+        show_header=True,
+        header_style="bold blue",
+        box=Box.SIMPLE
+    )
+
+    # Add columns to the table
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Name")
+    table.add_column("Type", style="green")
+    table.add_column("Exchange")
+    table.add_column("Country")
+    table.add_column("Coupon (%)", justify="right")
+    table.add_column("Maturity", justify="right")
+
+    # Add rows for each bond
+    for bond in bonds:
+        coupon = f"{bond.coupon_rate:.3f}" if bond.coupon_rate is not None else "N/A"
+        maturity = bond.maturity_date or "N/A"
+        bond_type = bond.bond_type or "bond"
+
+        table.add_row(
+            bond.symbol,
+            bond.name[:40] + ('...' if len(bond.name) > 40 else ''),
+            bond_type,
+            bond.exchange,
+            bond.country or "N/A",
+            coupon,
+            maturity
+        )
+
+    # Print the table
+    console = Console()
+    console.print(table)
+
+
+def display_bonds_detailed(bonds: List[Bond]) -> None:
+    """Display detailed information for a list of bonds."""
+    if not bonds:
+        click.echo("No bonds to display.")
+        return
+
+    console = Console()
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Display each bond in a panel
+    for bond in bonds:
+        # Create a table for bond details
+        grid = Table.grid(padding=0, expand=False)
+        grid.add_column("Field", style="bold cyan", width=18)
+        grid.add_column("Value")
+
+        # Add rows with bond details
+        grid.add_row("Symbol:", bond.symbol)
+        grid.add_row("Name:", bond.name)
+        grid.add_row("Type:", bond.bond_type or "bond")
+        grid.add_row("Exchange:", bond.exchange)
+        grid.add_row("Country:", bond.country or "N/A")
+        grid.add_row("Currency:", bond.currency)
+
+        if bond.issuer:
+            grid.add_row("Issuer:", bond.issuer)
+
+        if bond.coupon_rate is not None:
+            grid.add_row("Coupon Rate:", f"{bond.coupon_rate:.3f}%")
+
+        if bond.face_value is not None:
+            grid.add_row(
+                "Face Value:", f"{bond.face_value:.2f} {bond.currency}")
+
+        if bond.yield_to_maturity is not None:
+            grid.add_row("Yield to Maturity:",
+                         f"{bond.yield_to_maturity:.3f}%")
+
+        if bond.maturity_date:
+            grid.add_row("Maturity Date:", bond.maturity_date)
+
+        if bond.credit_rating:
+            grid.add_row("Credit Rating:", bond.credit_rating)
+
+        if bond.is_callable is not None:
+            grid.add_row("Callable:", "Yes" if bond.is_callable else "No")
+
+        # Create a panel containing the grid
+        panel = Panel(
+            grid,
+            title=f"[bold]{bond.symbol}[/bold] - {bond.name}",
+            subtitle=f"Data as of {current_time}",
+            expand=False
+        )
+
+        # Print the panel with a newline after all except the last one
+        console.print(panel)
+        if bond != bonds[-1]:
+            console.print("")
