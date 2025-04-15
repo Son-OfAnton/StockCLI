@@ -1973,6 +1973,10 @@ def symbols():
               help="Save exports to user's home directory instead of project directory")
 def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
     """List symbols that are cross-listed on multiple exchanges."""
+    from app.utils.display import display_cross_listed_symbols, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir
+    from app.models.symbol import Symbol
+    
     try:
         click.echo("Fetching cross-listed symbols...")
         with create_progress_spinner("Fetching cross-listed symbols") as progress:
@@ -1986,20 +1990,32 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
 
         # Convert API response to Symbol objects if possible
         symbols_list = []
+        raw_data = None
         try:
             for item in cross_listed:
-                symbols_list.append(Symbol.from_api_response(item))
-        except (KeyError, ValueError) as e:
-            click.echo(
-                f"Warning: Could not parse all cross-listed symbols: {e}")
-            # If we can't parse the data into Symbol objects, display raw data
-            from rich.pretty import pprint
-            click.echo("Showing raw data:")
-            pprint(cross_listed)
+                # Check if the item is a dictionary or a string
+                if isinstance(item, dict):
+                    symbols_list.append(Symbol.from_api_response(item))
+                else:
+                    logger.warning(f"Unexpected data format: {item}")
+            
+            # If we couldn't parse any symbols, keep the raw data for display
+            if not symbols_list:
+                raw_data = cross_listed
+        except (KeyError, ValueError, TypeError) as e:
+            click.echo(f"Warning: Could not parse all cross-listed symbols: {e}")
+            raw_data = cross_listed
+        
+        # Display the symbols or raw data
+        # Display the symbols or raw data
+        if symbols_list:
+            display_cross_listed_symbols(symbols_list)
+        elif raw_data:
+            from app.utils.display import display_raw_cross_listed_data
+            display_raw_cross_listed_data(raw_data)
+        else:
+            click.echo("No cross-listed symbols data available.")
             return
-
-        # Display the symbols
-        display_cross_listed_symbols(symbols_list)
 
         # Export if requested
         if export:
@@ -2019,12 +2035,56 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
             else:
                 export_dir = get_default_export_dir()
 
-            # Export the symbols
+            # Export the symbols or raw data
             from app.utils.export import export_items
-            exported_files = export_items(
-                symbols_list, export_formats, export_dir,
-                filename_prefix="cross_listed_symbols"
-            )
+            
+            if symbols_list:
+                exported_files = export_items(
+                    symbols_list, export_formats, export_dir,
+                    filename_prefix="cross_listed_symbols"
+                )
+            elif raw_data:
+                # Fallback export for raw data
+                import json
+                import csv
+                from datetime import datetime
+                
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                exported_files = {}
+                
+                # Export as JSON
+                if "json" in export_formats:
+                    json_file = export_dir / f"cross_listed_symbols_{timestamp}.json"
+                    export_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    with open(json_file, 'w') as f:
+                        json.dump(raw_data, f, indent=2)
+                    
+                    exported_files["json"] = str(json_file)
+                
+                # Export as CSV (if possible)
+                if "csv" in export_formats and isinstance(raw_data, list):
+                    csv_file = export_dir / f"cross_listed_symbols_{timestamp}.csv"
+                    export_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    # Try to extract field names from the first item
+                    fieldnames = []
+                    if raw_data and isinstance(raw_data[0], dict):
+                        fieldnames = list(raw_data[0].keys())
+                    
+                    with open(csv_file, 'w', newline='') as f:
+                        if fieldnames:
+                            writer = csv.DictWriter(f, fieldnames=fieldnames)
+                            writer.writeheader()
+                            for item in raw_data:
+                                if isinstance(item, dict):
+                                    writer.writerow(item)
+                        else:
+                            writer = csv.writer(f)
+                            for item in raw_data:
+                                writer.writerow([item])
+                    
+                    exported_files["csv"] = str(csv_file)
 
             if exported_files:
                 click.echo("\nExported cross-listed symbols to:")

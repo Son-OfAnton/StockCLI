@@ -873,32 +873,38 @@ class TwelveDataClient:
     def get_cross_listed_symbols(self, symbol: str = None) -> List[Dict[str, Any]]:
         """
         Fetch cross-listed symbols from different exchanges.
-
+        
         Args:
             symbol: Optional symbol to filter by (e.g., "AAPL")
-
+            
         Returns:
             List of dictionaries containing cross-listed symbol information
-
+            
         Raises:
             TwelveDataAPIError: If the API request fails
         """
         endpoint = "cross_listings"
         params = {}
-
+        
         if symbol:
             params['symbol'] = symbol
-
+            
         response_data = self._make_request(endpoint, params)
-
+        logger.debug(f"Cross-listings API response: {response_data}")
+        
         if isinstance(response_data, dict) and response_data.get("status") == "error":
             message = response_data.get("message", "Unknown error")
             logger.error(f"API Error: {message}")
             raise TwelveDataAPIError(f"API Error: {message}")
-
-        if "data" in response_data:
+            
+        # Handle different response formats
+        if isinstance(response_data, dict) and "data" in response_data:
             return response_data["data"]
-
+        elif isinstance(response_data, list):
+            return response_data
+        
+        # If we can't determine the format, return as is
+        logger.warning(f"Unexpected response format: {type(response_data)}")
         return response_data
 
 

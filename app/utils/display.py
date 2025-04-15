@@ -756,3 +756,88 @@ def display_cross_listed_symbols(symbols: List[Symbol]) -> None:
     # Display the table
     console.print(table)
     console.print()
+
+def display_raw_cross_listed_data(data: List) -> None:
+    """
+    Display raw cross-listed symbols data in a formatted table.
+    
+    This is a fallback when the response can't be parsed into Symbol objects.
+    
+    Args:
+        data: List of dictionaries or other data types from the API response
+    """
+    if not data:
+        console.print("[yellow]No cross-listed symbols data found.[/yellow]")
+        return
+    
+    # Try to determine the structure of the data
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        # Extract common fields from dictionaries
+        # First, collect all possible keys
+        all_keys = set()
+        for item in data:
+            all_keys.update(item.keys())
+        
+        # Use common fields as columns, prioritize important ones
+        important_fields = ["symbol", "name", "exchange", "mic_code", "country", "currency", "type"]
+        columns = [field for field in important_fields if field in all_keys]
+        
+        # Add any remaining fields
+        remaining_fields = sorted(list(all_keys - set(columns)))
+        columns.extend(remaining_fields)
+        
+        # Create table
+        table = Table(title=f"Cross-Listed Symbols ({len(data)})")
+        
+        # Add columns with appropriate styles
+        styles = {
+            "symbol": "cyan",
+            "name": "green", 
+            "exchange": "blue",
+            "mic_code": "blue italic",
+            "country": "magenta",
+            "currency": "yellow",
+            "type": "red"
+        }
+        
+        for column in columns:
+            table.add_column(column.replace("_", " ").title(), 
+                            style=styles.get(column, "white"))
+        
+        # Add rows
+        for item in data:
+            row_values = []
+            for column in columns:
+                value = item.get(column, "")
+                # Format value appropriately
+                if value is None:
+                    row_values.append("")
+                elif isinstance(value, (dict, list)):
+                    row_values.append(str(value)[:30] + "..." if len(str(value)) > 30 else str(value))
+                else:
+                    row_values.append(str(value))
+            
+            table.add_row(*row_values)
+        
+        # Display the table
+        console.print(table)
+        console.print()
+    
+    elif isinstance(data, list) and data and isinstance(data[0], str):
+        # Handle list of strings
+        table = Table(title=f"Cross-Listed Symbols ({len(data)})")
+        table.add_column("Symbol", style="cyan")
+        
+        for item in data:
+            table.add_row(str(item))
+        
+        console.print(table)
+        console.print()
+    
+    else:
+        # If structure is unknown, fall back to pretty printing
+        console.print("[yellow]Could not determine structure of data for tabular display.[/yellow]")
+        console.print("[yellow]Showing raw data:[/yellow]")
+        from rich.pretty import Pretty
+        console.print(Pretty(data))
+        console.print()
