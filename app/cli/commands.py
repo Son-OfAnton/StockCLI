@@ -2096,3 +2096,87 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
         click.echo(f"An unexpected error occurred: {e}", err=True)
+
+@symbols.command(name="exchanges")
+@click.option("--type", "-t", help="Filter by exchange type (e.g., 'stock', 'etf')")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_exchanges(type, export, output_dir, use_home_dir):
+    """List available exchanges with optional filtering by type."""
+    from app.utils.display import display_exchanges_table, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir
+    from app.models.symbol import Exchange
+    
+    try:
+        # Show a spinner while fetching exchanges
+        with create_progress_spinner(description="Fetching exchanges...") as progress:
+            task = progress.add_task("Fetching exchanges...", total=None)
+
+            # Fetch exchanges with type filter if provided
+            if type:
+                click.echo(f"Fetching exchanges of type: {type}")
+                exchanges_data = client.get_exchanges_by_type(type)
+            else:
+                exchanges_data = client.get_exchanges()
+
+            progress.update(task, completed=True)
+
+        exchanges = []
+        for exchange_data in exchanges_data:
+            try:
+                exchanges.append(Exchange.from_api_response(exchange_data))
+            except (KeyError, ValueError) as e:
+                logger.warning(f"Could not parse exchange data: {e}")
+
+        if not exchanges:
+            click.echo("No exchanges found matching the criteria.")
+            return
+
+        # Display the exchanges
+        display_exchanges_table(exchanges)
+        click.echo(f"Total exchanges: {len(exchanges)}")
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            else:  # both
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_dir = get_home_export_dir()
+            else:
+                export_dir = get_default_export_dir()
+
+            # Export the exchanges
+            from app.utils.export import export_items
+            
+            prefix = 'exchanges'
+            if type:
+                prefix = f"{type}_exchanges"
+                
+            export_results = export_items(
+                exchanges, export_formats, export_dir, 
+                filename_prefix=prefix
+            )
+
+            if export_results:
+                click.echo("\nExported exchanges to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
+        click.echo(f"An unexpected error occurred: {e}", err=True)

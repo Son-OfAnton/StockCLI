@@ -906,6 +906,41 @@ class TwelveDataClient:
         # If we can't determine the format, return as is
         logger.warning(f"Unexpected response format: {type(response_data)}")
         return response_data
+    
+    def get_exchanges_by_type(self, exchange_type: str = None) -> List[Dict[str, Any]]:
+        """
+        Fetch exchanges by type from the TwelveData API.
+        
+        Args:
+            exchange_type: Type of exchange to filter by, e.g., 'stock', 'etf'
+            
+        Returns:
+            List of exchanges with their details, filtered by type if specified
+            
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        endpoint = "exchanges"
+        params = {}
+        
+        if exchange_type:
+            params['type'] = exchange_type
+        
+        logger.debug(f"Fetching exchanges with type={exchange_type}")
+        
+        response_data = self._make_request(endpoint, params)
+        
+        # Check if response is in the expected format
+        if isinstance(response_data, dict) and response_data.get("status") == "error":
+            message = response_data.get("message", "Unknown error")
+            logger.error(f"API Error: {message}")
+            raise TwelveDataAPIError(f"API Error: {message}")
+        
+        if isinstance(response_data, dict) and 'data' in response_data:
+            return response_data['data']
+        
+        logger.warning(f"Unexpected response format for exchanges: {response_data}")
+        return response_data
 
 
 # Initialize the TwelveData client
