@@ -720,3 +720,39 @@ def display_commodity_groups(commodity_groups: List[CommodityGroup]) -> None:
         # Add spacing between panels
         if group != commodity_groups[-1]:
             console.print("")
+
+def display_cross_listed_symbols(symbols: List[Symbol]) -> None:
+    """
+    Display a list of cross-listed symbols in a formatted table.
+    
+    Args:
+        symbols: List of Symbol objects representing cross-listed symbols
+    """
+    if not symbols:
+        console.print("[yellow]No cross-listed symbols found.[/yellow]")
+        return
+        
+    table = Table(title=f"Cross-Listed Symbols ({len(symbols)})")
+    
+    # Define columns
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Name", style="green")
+    table.add_column("Exchange", style="blue")
+    table.add_column("Currency", style="yellow")
+    table.add_column("Country", style="magenta")
+    table.add_column("Type", style="red")
+    
+    # Add rows
+    for symbol in symbols:
+        table.add_row(
+            symbol.symbol,
+            symbol.name,
+            symbol.exchange,
+            symbol.currency,
+            symbol.country,
+            symbol.type
+        )
+    
+    # Display the table
+    console.print(table)
+    console.print()

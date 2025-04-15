@@ -471,27 +471,26 @@ class TwelveDataClient:
         """
         return self.get_funds('mutual_fund', exchange, country, symbol)
 
-
-    def get_bonds(self, 
-             bond_type: Optional[str] = None,
-             exchange: Optional[str] = None, 
-             country: Optional[str] = None, 
-             symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_bonds(self,
+                  bond_type: Optional[str] = None,
+                  exchange: Optional[str] = None,
+                  country: Optional[str] = None,
+                  symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Fetch available bonds from the TwelveData API.
-        
+
         Args:
             bond_type: Filter by bond type (e.g., 'government', 'corporate', 'municipal')
             exchange: Filter by exchange (e.g., 'NYSE')
             country: Filter by country (e.g., 'United States')
             symbol: Filter by symbol (partial match)
-            
+
         Returns:
             List of available bonds with their details
         """
         endpoint = "/bonds"  # Correct endpoint for bonds
         params = {}
-        
+
         if bond_type:
             params['type'] = bond_type
         if exchange:
@@ -500,17 +499,18 @@ class TwelveDataClient:
             params['country'] = country
         if symbol:
             params['symbol'] = symbol
-            
+
         logger.debug(f"Fetching available bonds with filters: {params}")
-        
+
         try:
             result = self._make_request(endpoint, params)
-            
+
             # Check if data is in the expected format
             if not isinstance(result, dict) or 'data' not in result:
                 logger.error(f"Unexpected response format for bonds: {result}")
-                raise TwelveDataAPIError("Unexpected response format for bonds endpoint")
-                
+                raise TwelveDataAPIError(
+                    "Unexpected response format for bonds endpoint")
+
             return result['data']
         except TwelveDataAPIError as e:
             logger.error(f"Error fetching bonds: {e}")
@@ -536,61 +536,60 @@ class TwelveDataClient:
             "high_yield"
         ]
 
-
-    def get_government_bonds(self, 
-                        exchange: Optional[str] = None, 
-                        country: Optional[str] = None, 
-                        symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_government_bonds(self,
+                             exchange: Optional[str] = None,
+                             country: Optional[str] = None,
+                             symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Fetch available government bonds from the TwelveData API.
-        
+
         Args:
             exchange: Filter by exchange
             country: Filter by country
             symbol: Filter by symbol
-            
+
         Returns:
             List of available government bonds
         """
         return self.get_bonds('government', exchange, country, symbol)
 
-    def get_corporate_bonds(self, 
-                        exchange: Optional[str] = None, 
-                        country: Optional[str] = None, 
-                        symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_corporate_bonds(self,
+                            exchange: Optional[str] = None,
+                            country: Optional[str] = None,
+                            symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Fetch available corporate bonds from the TwelveData API.
-        
+
         Args:
             exchange: Filter by exchange
             country: Filter by country
             symbol: Filter by symbol
-            
+
         Returns:
             List of available corporate bonds
         """
         return self.get_bonds('corporate', exchange, country, symbol)
 
-    def get_etfs(self, 
-            asset_class: Optional[str] = None,
-            exchange: Optional[str] = None, 
-            country: Optional[str] = None, 
-            symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_etfs(self,
+                 asset_class: Optional[str] = None,
+                 exchange: Optional[str] = None,
+                 country: Optional[str] = None,
+                 symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Fetch available ETFs from the TwelveData API.
-        
+
         Args:
             asset_class: Filter by asset class (e.g., 'equity', 'fixed_income')
             exchange: Filter by exchange (e.g., 'NYSE')
             country: Filter by country (e.g., 'United States')
             symbol: Filter by symbol (partial match)
-            
+
         Returns:
             List of available ETFs with their details
         """
         endpoint = "/etfs"  # Direct ETFs endpoint
         params = {}
-        
+
         if asset_class:
             params['asset_class'] = asset_class
         if exchange:
@@ -599,35 +598,37 @@ class TwelveDataClient:
             params['country'] = country
         if symbol:
             params['symbol'] = symbol
-            
+
         logger.debug(f"Fetching available ETFs with filters: {params}")
-        
+
         try:
             result = self._make_request(endpoint, params)
-            
+
             # Check if data is in the expected format
             if not isinstance(result, dict) or 'data' not in result:
                 logger.error(f"Unexpected response format for ETFs: {result}")
-                raise TwelveDataAPIError("Unexpected response format for ETFs endpoint")
-                
+                raise TwelveDataAPIError(
+                    "Unexpected response format for ETFs endpoint")
+
             return result['data']
         except TwelveDataAPIError as e:
             # If the ETFs endpoint is not available, fall back to the stocks endpoint with ETF type
-            logger.warning(f"ETF-specific endpoint failed: {e}. Falling back to stocks endpoint.")
+            logger.warning(
+                f"ETF-specific endpoint failed: {e}. Falling back to stocks endpoint.")
             return self._get_etfs_via_stocks_endpoint(asset_class, exchange, country, symbol)
 
     def _get_etfs_via_stocks_endpoint(self,
-                                    asset_class: Optional[str] = None,
-                                    exchange: Optional[str] = None,
-                                    country: Optional[str] = None,
-                                    symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+                                      asset_class: Optional[str] = None,
+                                      exchange: Optional[str] = None,
+                                      country: Optional[str] = None,
+                                      symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Alternative method to fetch ETFs via the stocks endpoint.
         Used as a fallback if the dedicated ETFs endpoint is not available.
         """
         endpoint = "/stocks"
         params = {"type": "etf"}
-        
+
         if exchange:
             params['exchange'] = exchange
         if country:
@@ -635,26 +636,30 @@ class TwelveDataClient:
         if symbol:
             params['symbol'] = symbol
         # Asset class would be handled in post-processing filtering
-            
-        logger.debug(f"Fetching ETFs via stocks endpoint with filters: {params}")
+
+        logger.debug(
+            f"Fetching ETFs via stocks endpoint with filters: {params}")
         result = self._make_request(endpoint, params)
-        
+
         # Check if data is in the expected format
         if not isinstance(result, dict) or 'data' not in result:
-            logger.error(f"Unexpected response format for stocks endpoint: {result}")
-            raise TwelveDataAPIError("Unexpected response format for stocks endpoint")
-        
+            logger.error(
+                f"Unexpected response format for stocks endpoint: {result}")
+            raise TwelveDataAPIError(
+                "Unexpected response format for stocks endpoint")
+
         # Filter for specific asset class if requested
         etfs = result['data']
         if asset_class:
-            etfs = [etf for etf in etfs if etf.get('asset_class') == asset_class]
-            
+            etfs = [etf for etf in etfs if etf.get(
+                'asset_class') == asset_class]
+
         return etfs
 
     def get_etf_asset_classes(self) -> List[str]:
         """
         Get available ETF asset classes.
-        
+
         Returns:
             List of available ETF asset classes (e.g., equity, fixed_income)
         """
@@ -671,75 +676,78 @@ class TwelveDataClient:
             "sector"
         ]
 
-    def get_equity_etfs(self, 
-                    exchange: Optional[str] = None, 
-                    country: Optional[str] = None, 
-                    symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_equity_etfs(self,
+                        exchange: Optional[str] = None,
+                        country: Optional[str] = None,
+                        symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Fetch available equity ETFs from the TwelveData API.
-        
+
         Args:
             exchange: Filter by exchange
             country: Filter by country
             symbol: Filter by symbol
-            
+
         Returns:
             List of available equity ETFs
         """
         return self.get_etfs('equity', exchange, country, symbol)
 
-    def get_fixed_income_etfs(self, 
-                            exchange: Optional[str] = None, 
-                            country: Optional[str] = None, 
-                            symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_fixed_income_etfs(self,
+                              exchange: Optional[str] = None,
+                              country: Optional[str] = None,
+                              symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Fetch available fixed income ETFs from the TwelveData API.
-        
+
         Args:
             exchange: Filter by exchange
             country: Filter by country
             symbol: Filter by symbol
-            
+
         Returns:
             List of available fixed income ETFs
         """
         return self.get_etfs('fixed_income', exchange, country, symbol)
 
-    def get_commodity_pairs(self, 
-                      commodity_group: Optional[str] = None,
-                      exchange: Optional[str] = None, 
-                      symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_commodity_pairs(self,
+                            commodity_group: Optional[str] = None,
+                            exchange: Optional[str] = None,
+                            symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Fetch available commodity pairs from the TwelveData API.
-        
+
         Args:
             commodity_group: Filter by commodity group (e.g., 'precious_metals', 'energy')
             exchange: Filter by exchange
             symbol: Filter by symbol (partial match)
-            
+
         Returns:
             List of available commodity pairs with their details
         """
         endpoint = "/commodities"  # Direct commodities endpoint
         params = {}
-        
+
         if exchange:
             params['exchange'] = exchange
         if symbol:
             params['symbol'] = symbol
-            
-        logger.debug(f"Fetching available commodity pairs with filters: {params}")
-        
+
+        logger.debug(
+            f"Fetching available commodity pairs with filters: {params}")
+
         try:
             result = self._make_request(endpoint, params)
-            
+
             # Check if data is in the expected format
             if not isinstance(result, dict) or 'data' not in result:
-                logger.error(f"Unexpected response format for commodities: {result}")
-                raise TwelveDataAPIError("Unexpected response format for commodities endpoint")
-                
+                logger.error(
+                    f"Unexpected response format for commodities: {result}")
+                raise TwelveDataAPIError(
+                    "Unexpected response format for commodities endpoint")
+
             commodities_data = result['data']
-            
+
             # Filter by commodity group if requested
             if commodity_group:
                 # Since the API might not have a direct commodity_group filter,
@@ -751,17 +759,18 @@ class TwelveDataClient:
                     if pair.commodity_group == commodity_group:
                         filtered_data.append(item)
                 return filtered_data
-                
+
             return commodities_data
         except TwelveDataAPIError as e:
             # If the commodities endpoint is not available, fall back to a more general approach
-            logger.warning(f"Commodity-specific endpoint failed: {e}. Falling back to alternative method.")
+            logger.warning(
+                f"Commodity-specific endpoint failed: {e}. Falling back to alternative method.")
             return self._get_commodity_pairs_via_alternative(commodity_group, exchange, symbol)
 
     def _get_commodity_pairs_via_alternative(self,
-                                        commodity_group: Optional[str] = None,
-                                        exchange: Optional[str] = None,
-                                        symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+                                             commodity_group: Optional[str] = None,
+                                             exchange: Optional[str] = None,
+                                             symbol: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Alternative method to fetch commodity pairs if the dedicated endpoint is not available.
         Uses the symbol/price endpoint with common commodity symbols.
@@ -770,11 +779,11 @@ class TwelveDataClient:
         commodity_symbols = {
             "precious_metals": ["XAU/USD", "XAG/USD", "XPT/USD", "XPD/USD", "GOLD/USD", "SILVER/USD"],
             "energy": ["CL/USD", "BRENT/USD", "WTI/USD", "NG/USD", "OIL/USD"],
-            "agriculture": ["ZC/USD", "ZW/USD", "ZS/USD", "CORN/USD", "WHEAT/USD", "SOYBEAN/USD", 
-                        "COTTON/USD", "SUGAR/USD", "COFFEE/USD", "COCOA/USD"],
+            "agriculture": ["ZC/USD", "ZW/USD", "ZS/USD", "CORN/USD", "WHEAT/USD", "SOYBEAN/USD",
+                            "COTTON/USD", "SUGAR/USD", "COFFEE/USD", "COCOA/USD"],
             "industrial_metals": ["HG/USD", "COPPER/USD", "ALU/USD", "ZINC/USD", "NICKEL/USD"]
         }
-        
+
         # If a specific commodity group is requested, use only those symbols
         symbol_list = []
         if commodity_group and commodity_group in commodity_symbols:
@@ -783,31 +792,33 @@ class TwelveDataClient:
             # Otherwise, use all common commodity symbols
             for symbols in commodity_symbols.values():
                 symbol_list.extend(symbols)
-        
+
         # If a specific symbol is requested, filter the list
         if symbol:
-            symbol_list = [s for s in symbol_list if symbol.upper() in s.upper()]
-        
+            symbol_list = [
+                s for s in symbol_list if symbol.upper() in s.upper()]
+
         # If no symbols remain after filtering, return an empty list
         if not symbol_list:
             return []
-        
+
         # Batch the symbols to avoid making too many requests
         batch_size = 8  # TwelveData allows multiple symbols in one request
-        batches = [symbol_list[i:i + batch_size] for i in range(0, len(symbol_list), batch_size)]
-        
+        batches = [symbol_list[i:i + batch_size]
+                   for i in range(0, len(symbol_list), batch_size)]
+
         all_results = []
         for batch in batches:
             symbols_str = ",".join(batch)
             endpoint = "/price"
             params = {"symbol": symbols_str}
-            
+
             if exchange:
                 params['exchange'] = exchange
-                
+
             try:
                 result = self._make_request(endpoint, params)
-                
+
                 # Convert result to a list of commodity pairs
                 if isinstance(result, dict):
                     for symbol, data in result.items():
@@ -820,15 +831,16 @@ class TwelveDataClient:
                             }
                             all_results.append(commodity_entry)
             except TwelveDataAPIError as e:
-                logger.warning(f"Error fetching batch of commodity symbols: {e}")
+                logger.warning(
+                    f"Error fetching batch of commodity symbols: {e}")
                 continue
-        
+
         return all_results
 
     def get_commodity_groups(self) -> List[Dict[str, Any]]:
         """
         Get available commodity groups with descriptions.
-        
+
         Returns:
             List of available commodity groups
         """
@@ -855,8 +867,40 @@ class TwelveDataClient:
                 "examples": ["COPPER/USD", "ALU/USD", "ZINC/USD", "NICKEL/USD"]
             }
         ]
-        
+
         return commodity_groups
+
+    def get_cross_listed_symbols(self, symbol: str = None) -> List[Dict[str, Any]]:
+        """
+        Fetch cross-listed symbols from different exchanges.
+
+        Args:
+            symbol: Optional symbol to filter by (e.g., "AAPL")
+
+        Returns:
+            List of dictionaries containing cross-listed symbol information
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        endpoint = "cross_listings"
+        params = {}
+
+        if symbol:
+            params['symbol'] = symbol
+
+        response_data = self._make_request(endpoint, params)
+
+        if isinstance(response_data, dict) and response_data.get("status") == "error":
+            message = response_data.get("message", "Unknown error")
+            logger.error(f"API Error: {message}")
+            raise TwelveDataAPIError(f"API Error: {message}")
+
+        if "data" in response_data:
+            return response_data["data"]
+
+        return response_data
+
 
 # Initialize the TwelveData client
 client = TwelveDataClient()

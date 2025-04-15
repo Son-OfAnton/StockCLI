@@ -809,6 +809,27 @@ def agricultural_commodities_shortcut(exchange, search, limit, detailed,
         use_home_dir=use_home_dir
     )
 
+@symbols_shortcut.command(name="cross-list")
+@click.option("--symbol", "-s", help="Filter by specific symbol (e.g., 'AAPL')")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def cross_listed_symbols_shortcut(symbol, export, output_dir, use_home_dir):
+    """List symbols that are cross-listed on multiple exchanges."""
+    from app.cli.commands import list_cross_listed_symbols
+    
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_cross_listed_symbols,
+        symbol=symbol,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
 
 def main():
     """Main entry point for the CLI app."""

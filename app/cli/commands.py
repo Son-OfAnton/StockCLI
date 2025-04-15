@@ -15,7 +15,8 @@ from app.models.bond import Bond
 from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF
 from app.models.stock import Quote
-from app.utils.display import display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_etfs, display_etfs_detailed
+from app.models.symbol import Symbol
+from app.utils.display import create_progress_spinner, display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_cross_listed_symbols, display_etfs, display_etfs_detailed
 from app.utils.helpers import (
     display_quotes_table, clear_screen
 )
@@ -1184,8 +1185,8 @@ def bonds():
               help="Directory to save exported files")
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
-def list_bonds(type, exchange, country, search, limit, detailed, 
-             export, output_dir, use_home_dir):
+def list_bonds(type, exchange, country, search, limit, detailed,
+               export, output_dir, use_home_dir):
     """List available bonds with optional filtering."""
     try:
         # Fetch bond data with filters
@@ -1195,24 +1196,24 @@ def list_bonds(type, exchange, country, search, limit, detailed,
             country=country,
             symbol=search
         )
-        
+
         # Convert API data to Bond objects
         bonds = [Bond.from_api_response(data) for data in bond_data]
-        
+
         # Apply limit if specified
         if limit > 0 and len(bonds) > limit:
             bonds = bonds[:limit]
-            
+
         if not bonds:
             click.echo("No bonds found matching the criteria.")
             return
-            
+
         # Display bonds
         if detailed:
             display_bonds_detailed(bonds)
         else:
             display_bonds(bonds)
-            
+
         # Export if requested
         if export:
             export_formats = []
@@ -1250,12 +1251,12 @@ def list_bonds(type, exchange, country, search, limit, detailed,
                 click.echo("\nExported bonds to:")
                 for fmt, path in export_results.items():
                     click.echo(f"  {fmt.upper()}: {path}")
-            
+
     except TwelveDataAPIError as e:
         logger.error(f"API error fetching bonds: {e}", exc_info=True)
         click.echo(f"Error from TwelveData API: {e}")
         click.echo("If the bonds endpoint is not available in your API plan, "
-                 "you may need to upgrade your subscription.")
+                   "you may need to upgrade your subscription.")
     except Exception as e:
         logger.error(f"Error fetching bonds: {e}", exc_info=True)
         click.echo(f"Error fetching bonds: {e}")
@@ -1368,7 +1369,6 @@ def list_corporate_bonds(exchange, country, search, limit, detailed,
     )
 
 
-
 @stock.group(name="etfs")
 def etfs():
     """Commands for exploring available ETFs (Exchange-Traded Funds)."""
@@ -1430,42 +1430,42 @@ def list_etfs(asset_class, exchange, country, search, limit, detailed, sort_by, 
             country=country,
             symbol=search
         )
-        
+
         # Convert API data to ETF objects
         etfs = [ETF.from_api_response(data) for data in etf_data]
-        
+
         # Sort ETFs based on user criteria
         if sort_by == 'expense_ratio':
             # Sort by expense ratio, handling None values
-            etfs.sort(key=lambda e: e.expense_ratio if e.expense_ratio is not None else float('inf'), 
-                     reverse=descending)
+            etfs.sort(key=lambda e: e.expense_ratio if e.expense_ratio is not None else float('inf'),
+                      reverse=descending)
         elif sort_by == 'managed_assets':
             # Sort by managed assets, handling None values
-            etfs.sort(key=lambda e: e.managed_assets if e.managed_assets is not None else 0.0, 
-                     reverse=descending)
+            etfs.sort(key=lambda e: e.managed_assets if e.managed_assets is not None else 0.0,
+                      reverse=descending)
         elif sort_by == 'dividend_yield':
             # Sort by dividend yield, handling None values
-            etfs.sort(key=lambda e: e.dividend_yield if e.dividend_yield is not None else 0.0, 
-                     reverse=descending)
+            etfs.sort(key=lambda e: e.dividend_yield if e.dividend_yield is not None else 0.0,
+                      reverse=descending)
         else:
             # Default sort by symbol
-            etfs.sort(key=lambda e: e.symbol, 
-                     reverse=descending)
-        
+            etfs.sort(key=lambda e: e.symbol,
+                      reverse=descending)
+
         # Apply limit if specified
         if limit > 0 and len(etfs) > limit:
             etfs = etfs[:limit]
-            
+
         if not etfs:
             click.echo("No ETFs found matching the criteria.")
             return
-            
+
         # Display ETFs
         if detailed:
             display_etfs_detailed(etfs)
         else:
             display_etfs(etfs)
-            
+
         # Export if requested
         if export:
             export_formats = []
@@ -1475,37 +1475,40 @@ def list_etfs(asset_class, exchange, country, search, limit, detailed, sort_by, 
                 export_formats = ['csv']
             elif export == 'both':
                 export_formats = ['json', 'csv']
-                
+
             # Handle output directory
             export_output_dir = None
             if output_dir:
                 # If a custom output directory is provided, use it
                 export_output_dir = Path(output_dir).expanduser().resolve()
-                logger.debug(f"Using custom export directory: {export_output_dir}")
+                logger.debug(
+                    f"Using custom export directory: {export_output_dir}")
             elif use_home_dir:
                 # If --use-home-dir flag is set, use home directory
                 export_output_dir = get_home_export_dir()
-                logger.debug(f"Using home directory for exports: {export_output_dir}")
+                logger.debug(
+                    f"Using home directory for exports: {export_output_dir}")
             else:
                 # Otherwise, use the default (project) directory
                 export_output_dir = get_default_export_dir()
-                logger.debug(f"Using default project export directory: {export_output_dir}")
-                
+                logger.debug(
+                    f"Using default project export directory: {export_output_dir}")
+
             from app.utils.export import export_items
             export_results = export_items(
                 etfs, export_formats, export_output_dir, "etfs"
             )
-            
+
             if export_results:
                 click.echo("\nExported ETFs to:")
                 for fmt, path in export_results.items():
                     click.echo(f"  {fmt.upper()}: {path}")
-            
+
     except TwelveDataAPIError as e:
         logger.error(f"API error fetching ETFs: {e}", exc_info=True)
         click.echo(f"Error from TwelveData API: {e}")
         click.echo("If the ETFs endpoint is not available in your API plan, "
-                  "the command will try to use the stocks endpoint as a fallback.")
+                   "the command will try to use the stocks endpoint as a fallback.")
     except Exception as e:
         logger.error(f"Error fetching ETFs: {e}", exc_info=True)
         click.echo(f"Error fetching ETFs: {e}")
@@ -1522,7 +1525,7 @@ def list_etf_asset_classes():
     """
     try:
         asset_classes = client.get_etf_asset_classes()
-        
+
         # Display asset classes
         if asset_classes:
             click.echo("Available ETF Asset Classes:")
@@ -1530,7 +1533,7 @@ def list_etf_asset_classes():
                 click.echo(f"  - {asset_class}")
         else:
             click.echo("No asset classes found.")
-            
+
     except Exception as e:
         logger.error(f"Error fetching ETF asset classes: {e}", exc_info=True)
         click.echo(f"Error fetching ETF asset classes: {e}")
@@ -1553,7 +1556,7 @@ def list_etf_asset_classes():
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def list_equity_etfs(exchange, country, search, limit, detailed, sort_by, descending,
-                    export, output_dir, use_home_dir):
+                     export, output_dir, use_home_dir):
     """List equity ETFs with optional filtering.
 
     Examples:
@@ -1599,7 +1602,7 @@ def list_equity_etfs(exchange, country, search, limit, detailed, sort_by, descen
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def list_fixed_income_etfs(exchange, country, search, limit, detailed, sort_by, descending,
-                         export, output_dir, use_home_dir):
+                           export, output_dir, use_home_dir):
     """List fixed income ETFs (bond ETFs) with optional filtering.
 
     Examples:
@@ -1650,22 +1653,22 @@ def get_etf_info(symbol, export, output_dir, use_home_dir):
     try:
         # Fetch ETF data for the specific symbol
         etf_data = client.get_etfs(symbol=symbol)
-        
+
         # Check if we found an ETF with this symbol
         if not etf_data:
             click.echo(f"No ETF found with symbol: {symbol}")
             return
-        
+
         # Convert API data to ETF object (use the first match)
         etf = ETF.from_api_response(etf_data[0])
-        
+
         # Display the ETF
         display_etfs_detailed([etf])
-        
+
         # Export if requested
         if export:
             export_formats = [export]
-                
+
             # Handle output directory
             export_output_dir = None
             if output_dir:
@@ -1674,17 +1677,17 @@ def get_etf_info(symbol, export, output_dir, use_home_dir):
                 export_output_dir = get_home_export_dir()
             else:
                 export_output_dir = get_default_export_dir()
-                
+
             from app.utils.export import export_items
             export_results = export_items(
                 [etf], export_formats, export_output_dir, f"etf_{symbol.lower()}"
             )
-            
+
             if export_results:
                 click.echo("\nExported ETF information to:")
                 for fmt, path in export_results.items():
                     click.echo(f"  {fmt.upper()}: {path}")
-            
+
     except Exception as e:
         logger.error(f"Error fetching ETF information: {e}", exc_info=True)
         click.echo(f"Error fetching ETF information: {e}")
@@ -1709,8 +1712,8 @@ def commodities():
               help="Directory to save exported files")
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
-def list_commodity_pairs(group, exchange, search, limit, detailed, 
-                        export, output_dir, use_home_dir):
+def list_commodity_pairs(group, exchange, search, limit, detailed,
+                         export, output_dir, use_home_dir):
     """List available commodity trading pairs with optional filtering.
 
     Examples:
@@ -1740,24 +1743,25 @@ def list_commodity_pairs(group, exchange, search, limit, detailed,
             exchange=exchange,
             symbol=search
         )
-        
+
         # Convert API data to CommodityPair objects
-        commodity_pairs = [CommodityPair.from_api_response(data) for data in commodities_data]
-        
+        commodity_pairs = [CommodityPair.from_api_response(
+            data) for data in commodities_data]
+
         # Apply limit if specified
         if limit > 0 and len(commodity_pairs) > limit:
             commodity_pairs = commodity_pairs[:limit]
-            
+
         if not commodity_pairs:
             click.echo("No commodity pairs found matching the criteria.")
             return
-            
+
         # Display commodity pairs
         if detailed:
             display_commodity_pairs_detailed(commodity_pairs)
         else:
             display_commodity_pairs(commodity_pairs)
-            
+
         # Export if requested
         if export:
             export_formats = []
@@ -1767,32 +1771,35 @@ def list_commodity_pairs(group, exchange, search, limit, detailed,
                 export_formats = ['csv']
             elif export == 'both':
                 export_formats = ['json', 'csv']
-                
+
             # Handle output directory
             export_output_dir = None
             if output_dir:
                 # If a custom output directory is provided, use it
                 export_output_dir = Path(output_dir).expanduser().resolve()
-                logger.debug(f"Using custom export directory: {export_output_dir}")
+                logger.debug(
+                    f"Using custom export directory: {export_output_dir}")
             elif use_home_dir:
                 # If --use-home-dir flag is set, use home directory
                 export_output_dir = get_home_export_dir()
-                logger.debug(f"Using home directory for exports: {export_output_dir}")
+                logger.debug(
+                    f"Using home directory for exports: {export_output_dir}")
             else:
                 # Otherwise, use the default (project) directory
                 export_output_dir = get_default_export_dir()
-                logger.debug(f"Using default project export directory: {export_output_dir}")
-                
+                logger.debug(
+                    f"Using default project export directory: {export_output_dir}")
+
             from app.utils.export import export_items
             export_results = export_items(
                 commodity_pairs, export_formats, export_output_dir, "commodities"
             )
-            
+
             if export_results:
                 click.echo("\nExported commodity pairs to:")
                 for fmt, path in export_results.items():
                     click.echo(f"  {fmt.upper()}: {path}")
-            
+
     except TwelveDataAPIError as e:
         logger.error(f"API error fetching commodity pairs: {e}", exc_info=True)
         click.echo(f"Error from TwelveData API: {e}")
@@ -1812,7 +1819,7 @@ def list_commodity_groups():
     """
     try:
         commodity_groups_data = client.get_commodity_groups()
-        
+
         # Display commodity groups
         if commodity_groups_data:
             # Create CommodityGroup objects
@@ -1823,11 +1830,11 @@ def list_commodity_groups():
                     examples=data['examples']
                 ) for data in commodity_groups_data
             ]
-            
+
             display_commodity_groups(commodity_groups)
         else:
             click.echo("No commodity groups found.")
-            
+
     except Exception as e:
         logger.error(f"Error fetching commodity groups: {e}", exc_info=True)
         click.echo(f"Error fetching commodity groups: {e}")
@@ -1846,7 +1853,7 @@ def list_commodity_groups():
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def list_precious_metals(exchange, search, limit, detailed,
-                        export, output_dir, use_home_dir):
+                         export, output_dir, use_home_dir):
     """List precious metals commodity pairs with optional filtering.
 
     Examples:
@@ -1885,7 +1892,7 @@ def list_precious_metals(exchange, search, limit, detailed,
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def list_energy_commodities(exchange, search, limit, detailed,
-                          export, output_dir, use_home_dir):
+                            export, output_dir, use_home_dir):
     """List energy commodity pairs with optional filtering.
 
     Examples:
@@ -1924,7 +1931,7 @@ def list_energy_commodities(exchange, search, limit, detailed,
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def list_agricultural_commodities(exchange, search, limit, detailed,
-                               export, output_dir, use_home_dir):
+                                  export, output_dir, use_home_dir):
     """List agricultural commodity pairs with optional filtering.
 
     Examples:
@@ -1948,3 +1955,84 @@ def list_agricultural_commodities(exchange, search, limit, detailed,
         output_dir=output_dir,
         use_home_dir=use_home_dir
     )
+
+
+@stock.group(name="symbols")
+def symbols():
+    """Commands for exploring available financial symbols."""
+    pass
+
+
+@symbols.command(name="cross-list")
+@click.option("--symbol", "-s", help="Filter by specific symbol (e.g., 'AAPL')")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
+    """List symbols that are cross-listed on multiple exchanges."""
+    try:
+        click.echo("Fetching cross-listed symbols...")
+        with create_progress_spinner("Fetching cross-listed symbols") as progress:
+            task = progress.add_task("Downloading...", total=1)
+            cross_listed = client.get_cross_listed_symbols(symbol=symbol)
+            progress.update(task, advance=1)
+
+        if not cross_listed:
+            click.echo("No cross-listed symbols found.")
+            return
+
+        # Convert API response to Symbol objects if possible
+        symbols_list = []
+        try:
+            for item in cross_listed:
+                symbols_list.append(Symbol.from_api_response(item))
+        except (KeyError, ValueError) as e:
+            click.echo(
+                f"Warning: Could not parse all cross-listed symbols: {e}")
+            # If we can't parse the data into Symbol objects, display raw data
+            from rich.pretty import pprint
+            click.echo("Showing raw data:")
+            pprint(cross_listed)
+            return
+
+        # Display the symbols
+        display_cross_listed_symbols(symbols_list)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == "json":
+                export_formats = ["json"]
+            elif export == "csv":
+                export_formats = ["csv"]
+            else:  # both
+                export_formats = ["json", "csv"]
+
+            # Determine output directory
+            if output_dir:
+                export_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_dir = get_home_export_dir()
+            else:
+                export_dir = get_default_export_dir()
+
+            # Export the symbols
+            from app.utils.export import export_items
+            exported_files = export_items(
+                symbols_list, export_formats, export_dir,
+                filename_prefix="cross_listed_symbols"
+            )
+
+            if exported_files:
+                click.echo("\nExported cross-listed symbols to:")
+                for fmt, path in exported_files.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
+        click.echo(f"An unexpected error occurred: {e}", err=True)
