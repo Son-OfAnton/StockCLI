@@ -2180,3 +2180,120 @@ def list_exchanges(type, export, output_dir, use_home_dir):
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
         click.echo(f"An unexpected error occurred: {e}", err=True)
+
+@symbols.command(name="exchange-schedule")
+@click.argument("code", required=True)
+@click.option("--date", "-d", help="Specific date in YYYY-MM-DD format")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_exchange_schedule(code, date, export, output_dir, use_home_dir):
+    """Get exchange schedule, including details and trading hours."""
+    from app.utils.display import display_exchange_schedule, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir
+    from app.models.exchange_details import ExchangeSchedule
+    
+    try:
+        # Show a spinner while fetching data
+        with create_progress_spinner(description=f"Fetching schedule for {code}...") as progress:
+            task = progress.add_task("Downloading...", total=1)
+
+            # Fetch exchange schedule
+            exchange_data = client.get_exchange_schedule(code, date)
+            progress.update(task, completed=True)
+
+        # Create ExchangeSchedule object
+        exchange_schedule = ExchangeSchedule.from_api_response(exchange_data)
+
+        # Display the exchange schedule
+        display_exchange_schedule(exchange_schedule)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            else:  # both
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_dir = get_home_export_dir()
+            else:
+                export_dir = get_default_export_dir()
+
+            # Export the exchange schedule
+            from app.utils.export import export_items
+            
+            filename_prefix = f"exchange_schedule_{code.lower()}"
+            if date:
+                filename_prefix += f"_{date}"
+                
+            export_results = export_items(
+                [exchange_schedule], export_formats, export_dir, 
+                filename_prefix=filename_prefix
+            )
+
+            if export_results:
+                click.echo("\nExported exchange schedule to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error: {e}")
+        click.echo(f"An unexpected error occurred: {e}", err=True)
+
+
+# Create aliases for backward compatibility
+@symbols.command(name="exchange-details")
+@click.argument("code", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_exchange_details_alias(code, export, output_dir, use_home_dir):
+    """Get detailed information about a specific exchange (alias for exchange-schedule)."""
+    ctx = click.get_current_context()
+    click.echo("Note: 'exchange-details' is now an alias for 'exchange-schedule'")
+    ctx.invoke(
+        get_exchange_schedule,
+        code=code,
+        date=None,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@symbols.command(name="trading-hours")
+@click.argument("code", required=True)
+@click.option("--date", "-d", help="Specific date in YYYY-MM-DD format")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_exchange_trading_hours_alias(code, date, export, output_dir, use_home_dir):
+    """Get trading hours for a specific exchange (alias for exchange-schedule)."""
+    ctx = click.get_current_context()
+    click.echo("Note: 'trading-hours' is now an alias for 'exchange-schedule'")
+    ctx.invoke(
+        get_exchange_schedule,
+        code=code,
+        date=date,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )

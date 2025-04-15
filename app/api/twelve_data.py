@@ -873,60 +873,97 @@ class TwelveDataClient:
     def get_cross_listed_symbols(self, symbol: str = None) -> List[Dict[str, Any]]:
         """
         Fetch cross-listed symbols from different exchanges.
-        
+
         Args:
             symbol: Optional symbol to filter by (e.g., "AAPL")
-            
+
         Returns:
             List of dictionaries containing cross-listed symbol information
-            
+
         Raises:
             TwelveDataAPIError: If the API request fails
         """
         endpoint = "cross_listings"
         params = {}
-        
+
         if symbol:
             params['symbol'] = symbol
-            
+
         response_data = self._make_request(endpoint, params)
         logger.debug(f"Cross-listings API response: {response_data}")
-        
+
         if isinstance(response_data, dict) and response_data.get("status") == "error":
             message = response_data.get("message", "Unknown error")
             logger.error(f"API Error: {message}")
             raise TwelveDataAPIError(f"API Error: {message}")
-            
+
         # Handle different response formats
         if isinstance(response_data, dict) and "data" in response_data:
             return response_data["data"]
         elif isinstance(response_data, list):
             return response_data
-        
+
         # If we can't determine the format, return as is
         logger.warning(f"Unexpected response format: {type(response_data)}")
         return response_data
-    
+
     def get_exchanges_by_type(self, exchange_type: str = None) -> List[Dict[str, Any]]:
         """
         Fetch exchanges by type from the TwelveData API.
-        
+
         Args:
             exchange_type: Type of exchange to filter by, e.g., 'stock', 'etf'
-            
+
         Returns:
             List of exchanges with their details, filtered by type if specified
-            
+
         Raises:
             TwelveDataAPIError: If the API request fails
         """
         endpoint = "exchanges"
         params = {}
-        
+
         if exchange_type:
             params['type'] = exchange_type
-        
+
         logger.debug(f"Fetching exchanges with type={exchange_type}")
+
+        response_data = self._make_request(endpoint, params)
+
+        # Check if response is in the expected format
+        if isinstance(response_data, dict) and response_data.get("status") == "error":
+            message = response_data.get("message", "Unknown error")
+            logger.error(f"API Error: {message}")
+            raise TwelveDataAPIError(f"API Error: {message}")
+
+        if isinstance(response_data, dict) and 'data' in response_data:
+            return response_data['data']
+
+        logger.warning(
+            f"Unexpected response format for exchanges: {response_data}")
+        return response_data
+    
+    def get_exchange_schedule(self, code: str, date: str = None) -> Dict[str, Any]:
+        """
+        Fetch exchange schedule, including details and trading hours.
+        
+        Args:
+            code: Exchange code (e.g., 'NASDAQ', 'NYSE')
+            date: Optional date to get trading hours for a specific date (YYYY-MM-DD format)
+            
+        Returns:
+            Dictionary containing exchange schedule information including details and trading hours
+            
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        endpoint = "exchange_schedule"
+        params = {'code': code}
+        
+        if date:
+            params['date'] = date
+        
+        logger.debug(f"Fetching exchange schedule for: {code}, date: {date}")
         
         response_data = self._make_request(endpoint, params)
         
@@ -936,10 +973,6 @@ class TwelveDataClient:
             logger.error(f"API Error: {message}")
             raise TwelveDataAPIError(f"API Error: {message}")
         
-        if isinstance(response_data, dict) and 'data' in response_data:
-            return response_data['data']
-        
-        logger.warning(f"Unexpected response format for exchanges: {response_data}")
         return response_data
 
 

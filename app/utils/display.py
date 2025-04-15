@@ -841,3 +841,224 @@ def display_raw_cross_listed_data(data: List) -> None:
         from rich.pretty import Pretty
         console.print(Pretty(data))
         console.print()
+
+def display_exchange_details(exchange_details: Any) -> None:
+    """
+    Display detailed information about an exchange.
+    
+    Args:
+        exchange_details: ExchangeDetails object to display
+    """
+    from rich.panel import Panel
+    from rich.text import Text
+    
+    # Create a panel for the exchange details
+    header = Text(f"Exchange Details: {exchange_details.name} ({exchange_details.code})")
+    header.stylize("bold blue")
+    
+    details = []
+    details.append(f"Name: {exchange_details.name}")
+    details.append(f"Code: {exchange_details.code}")
+    details.append(f"Country: {exchange_details.country}")
+    
+    if exchange_details.timezone:
+        details.append(f"Timezone: {exchange_details.timezone}")
+    if exchange_details.currency:
+        details.append(f"Currency: {exchange_details.currency}")
+    if exchange_details.mic_code:
+        details.append(f"MIC Code: {exchange_details.mic_code}")
+    if exchange_details.website:
+        details.append(f"Website: {exchange_details.website}")
+    if exchange_details.operating_mic:
+        details.append(f"Operating MIC: {exchange_details.operating_mic}")
+    if exchange_details.operating_mic_name:
+        details.append(f"Operating MIC Name: {exchange_details.operating_mic_name}")
+    
+    # Add description at the end if available
+    if exchange_details.description:
+        description_text = Text("\nDescription:")
+        description_text.stylize("bold")
+        description = Text(exchange_details.description)
+        
+        details_text = "\n".join(details)
+        details_text = f"{details_text}\n\n{description_text}\n{description}"
+    else:
+        details_text = "\n".join(details)
+    
+    panel = Panel(details_text, title=header, border_style="blue")
+    console.print(panel)
+
+def display_exchange_trading_hours(trading_hours: List) -> None:
+    """
+    Display trading hours for an exchange.
+    
+    Args:
+        trading_hours: List of TradingHours objects to display
+    """
+    if not trading_hours:
+        console.print("[yellow]No trading hours information found.[/yellow]")
+        return
+    
+    exchange_name = trading_hours[0].exchange
+    table = Table(title=f"Trading Hours for {exchange_name}")
+    
+    # Add columns
+    table.add_column("Day", style="cyan")
+    table.add_column("Open", style="green")
+    table.add_column("Close", style="red")
+    table.add_column("Open (UTC)", style="green")
+    table.add_column("Close (UTC)", style="red")
+    table.add_column("Status", style="yellow")
+    
+    # Add rows
+    for hours in trading_hours:
+        day = hours.day_of_week if hours.day_of_week else "N/A"
+        status = hours.status if hours.status else "N/A"
+        is_open = "[green]Open[/green]" if hours.is_open_now else "[red]Closed[/red]" if hours.is_open_now is not None else "N/A"
+        
+        if hours.status == "open" and hours.is_open_now:
+            status = "[green]Open Now[/green]"
+        elif hours.status == "closed" and not hours.is_open_now:
+            status = "[red]Closed Now[/red]"
+        
+        table.add_row(
+            day,
+            hours.open_time,
+            hours.close_time,
+            hours.open_time_utc if hours.open_time_utc else "N/A",
+            hours.close_time_utc if hours.close_time_utc else "N/A",
+            status
+        )
+    
+    console.print(table)
+    console.print()
+
+def display_raw_exchange_trading_hours(data: Dict[str, Any], exchange: str) -> None:
+    """
+    Display raw trading hours data in a formatted table.
+    
+    This is a fallback when the response can't be parsed into TradingHours objects.
+    
+    Args:
+        data: Dictionary with trading hours data from the API
+        exchange: Exchange code
+    """
+    table = Table(title=f"Trading Hours for {exchange}")
+    
+    # Try to determine the structure of the data
+    if not data:
+        console.print("[yellow]No trading hours information found.[/yellow]")
+        return
+    
+    # Check if we have a 'timezone' field for formatting
+    timezone = data.get('timezone', 'Unknown')
+    
+    # Add columns based on what data we have
+    table.add_column("Field", style="cyan")
+    table.add_column("Value", style="green")
+    
+    # Add rows for each field
+    for field, value in data.items():
+        if field == 'is_open_now' and isinstance(value, bool):
+            value_str = "[green]Yes[/green]" if value else "[red]No[/red]"
+        else:
+            value_str = str(value)
+        
+        table.add_row(field.replace('_', ' ').title(), value_str)
+    
+    console.print(table)
+    console.print(f"Timezone: {timezone}")
+    console.print()
+
+def display_exchange_schedule(exchange_schedule) -> None:
+    """
+    Display exchange schedule, including details and trading hours.
+    
+    Args:
+        exchange_schedule: ExchangeSchedule object to display
+    """
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+    
+    if not exchange_schedule:
+        console.print("[yellow]No exchange schedule found.[/yellow]")
+        return
+    
+    # Display exchange details in a panel
+    title = Text(f"{exchange_schedule.name} ({exchange_schedule.code})", style="bold cyan")
+    
+    content = []
+    content.append(Text.from_markup(f"[bold]Country:[/bold] {exchange_schedule.country}"))
+    content.append(Text.from_markup(f"[bold]Timezone:[/bold] {exchange_schedule.timezone}"))
+    
+    if exchange_schedule.date:
+        content.append(Text.from_markup(f"[bold]Date:[/bold] {exchange_schedule.date}"))
+        
+    if exchange_schedule.is_open is not None:
+        status = "[green]Open[/green]" if exchange_schedule.is_open else "[red]Closed[/red]"
+        content.append(Text.from_markup(f"[bold]Status:[/bold] {status}"))
+    
+    if exchange_schedule.currency:
+        content.append(Text.from_markup(f"[bold]Currency:[/bold] {exchange_schedule.currency}"))
+    
+    if exchange_schedule.suffix:
+        content.append(Text.from_markup(f"[bold]Suffix:[/bold] {exchange_schedule.suffix}"))
+    
+    if exchange_schedule.mic_code:
+        content.append(Text.from_markup(f"[bold]MIC Code:[/bold] {exchange_schedule.mic_code}"))
+    
+    if exchange_schedule.operating_mic:
+        content.append(Text.from_markup(f"[bold]Operating MIC:[/bold] {exchange_schedule.operating_mic}"))
+    
+    if exchange_schedule.website:
+        content.append(Text.from_markup(f"[bold]Website:[/bold] {exchange_schedule.website}"))
+    
+    if exchange_schedule.type:
+        content.append(Text.from_markup(f"[bold]Type:[/bold] {exchange_schedule.type}"))
+    
+    # Join with newlines
+    panel_content = "\n".join(str(line) for line in content)
+    panel = Panel(panel_content, title=title, expand=False, border_style="blue")
+    
+    console.print(panel)
+    
+    # Display trading hours if available
+    if exchange_schedule.sessions:
+        console.print("\n[bold cyan]Trading Hours:[/bold cyan]")
+        
+        # Create a table for trading sessions
+        table = Table()
+        
+        table.add_column("Session Type", style="cyan")
+        table.add_column("Open", style="green")
+        table.add_column("Close", style="red")
+        
+        for session in exchange_schedule.sessions:
+            table.add_row(
+                session.session_name,
+                session.start_time,
+                session.end_time
+            )
+        
+        console.print(table)
+    
+    # Display holidays if available
+    if exchange_schedule.holidays and len(exchange_schedule.holidays) > 0:
+        console.print("\n[bold cyan]Upcoming Holidays:[/bold cyan]")
+        
+        # Create a table for holidays
+        table = Table()
+        
+        table.add_column("Date", style="cyan")
+        table.add_column("Holiday Name", style="green")
+        
+        for holiday in exchange_schedule.holidays:
+            table.add_row(
+                holiday.get('date', 'N/A'),
+                holiday.get('name', 'N/A')
+            )
+        
+        console.print(table)
+    
+    console.print()

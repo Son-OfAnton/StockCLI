@@ -547,10 +547,10 @@ def etfs_shortcut():
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def list_etfs_shortcut(asset_class, exchange, country, search, limit, detailed, sort_by, descending,
-                     export, output_dir, use_home_dir):
+                       export, output_dir, use_home_dir):
     """List available ETFs with optional filtering."""
     from app.cli.commands import list_etfs
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         list_etfs,
@@ -585,10 +585,10 @@ def list_etfs_shortcut(asset_class, exchange, country, search, limit, detailed, 
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def equity_etfs_shortcut(exchange, country, search, limit, detailed, sort_by, descending,
-                       export, output_dir, use_home_dir):
+                         export, output_dir, use_home_dir):
     """List equity ETFs with optional filtering."""
     from app.cli.commands import list_equity_etfs
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         list_equity_etfs,
@@ -622,10 +622,10 @@ def equity_etfs_shortcut(exchange, country, search, limit, detailed, sort_by, de
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def fixed_income_etfs_shortcut(exchange, country, search, limit, detailed, sort_by, descending,
-                            export, output_dir, use_home_dir):
+                               export, output_dir, use_home_dir):
     """List fixed income ETFs (bond ETFs) with optional filtering."""
     from app.cli.commands import list_fixed_income_etfs
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         list_fixed_income_etfs,
@@ -653,7 +653,7 @@ def fixed_income_etfs_shortcut(exchange, country, search, limit, detailed, sort_
 def etf_info_shortcut(symbol, export, output_dir, use_home_dir):
     """Get detailed information for a specific ETF by symbol."""
     from app.cli.commands import get_etf_info
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         get_etf_info,
@@ -668,7 +668,7 @@ def etf_info_shortcut(symbol, export, output_dir, use_home_dir):
 def etf_asset_classes_shortcut():
     """List available ETF asset classes."""
     from app.cli.commands import list_etf_asset_classes
-    
+
     ctx = click.get_current_context()
     ctx.invoke(list_etf_asset_classes)
 
@@ -693,10 +693,10 @@ def commodities_shortcut():
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def list_commodities_shortcut(group, exchange, search, limit, detailed,
-                            export, output_dir, use_home_dir):
+                              export, output_dir, use_home_dir):
     """List available commodity trading pairs with optional filtering."""
     from app.cli.commands import list_commodity_pairs
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         list_commodity_pairs,
@@ -715,7 +715,7 @@ def list_commodities_shortcut(group, exchange, search, limit, detailed,
 def commodity_groups_shortcut():
     """List available commodity groups with descriptions."""
     from app.cli.commands import list_commodity_groups
-    
+
     ctx = click.get_current_context()
     ctx.invoke(list_commodity_groups)
 
@@ -733,10 +733,10 @@ def commodity_groups_shortcut():
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def precious_metals_shortcut(exchange, search, limit, detailed,
-                           export, output_dir, use_home_dir):
+                             export, output_dir, use_home_dir):
     """List precious metals commodity pairs with optional filtering."""
     from app.cli.commands import list_precious_metals
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         list_precious_metals,
@@ -763,10 +763,10 @@ def precious_metals_shortcut(exchange, search, limit, detailed,
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def energy_commodities_shortcut(exchange, search, limit, detailed,
-                             export, output_dir, use_home_dir):
+                                export, output_dir, use_home_dir):
     """List energy commodity pairs with optional filtering."""
     from app.cli.commands import list_energy_commodities
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         list_energy_commodities,
@@ -793,10 +793,10 @@ def energy_commodities_shortcut(exchange, search, limit, detailed,
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def agricultural_commodities_shortcut(exchange, search, limit, detailed,
-                                  export, output_dir, use_home_dir):
+                                      export, output_dir, use_home_dir):
     """List agricultural commodity pairs with optional filtering."""
     from app.cli.commands import list_agricultural_commodities
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         list_agricultural_commodities,
@@ -809,6 +809,7 @@ def agricultural_commodities_shortcut(exchange, search, limit, detailed,
         use_home_dir=use_home_dir
     )
 
+
 @symbols_shortcut.command(name="cross-list")
 @click.option("--symbol", "-s", help="Filter by specific symbol (e.g., 'AAPL')")
 @click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
@@ -820,7 +821,7 @@ def agricultural_commodities_shortcut(exchange, search, limit, detailed,
 def cross_listed_symbols_shortcut(symbol, export, output_dir, use_home_dir):
     """List symbols that are cross-listed on multiple exchanges."""
     from app.cli.commands import list_cross_listed_symbols
-    
+
     ctx = click.get_current_context()
     ctx.invoke(
         list_cross_listed_symbols,
@@ -829,6 +830,7 @@ def cross_listed_symbols_shortcut(symbol, export, output_dir, use_home_dir):
         output_dir=output_dir,
         use_home_dir=use_home_dir
     )
+
 
 @symbols_shortcut.command(name="exchanges")
 @click.option("--type", "-t", help="Filter by exchange type (e.g., 'stock', 'etf')")
@@ -845,6 +847,50 @@ def list_exchanges_shortcut(type, export, output_dir, use_home_dir):
     ctx.invoke(
         list_exchanges,
         type=type,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@symbols_shortcut.command(name="exchange-details")
+@click.argument("exchange", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def exchange_details_shortcut(exchange, export, output_dir, use_home_dir):
+    """Get detailed information for a specific exchange."""
+    from app.cli.commands import get_exchange_details_alias
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_exchange_details_alias,
+        exchange=exchange,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@symbols_shortcut.command(name="trading-hours")
+@click.argument("exchange", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def trading_hours_shortcut(exchange, export, output_dir, use_home_dir):
+    """Get trading hours for a specific exchange."""
+    from app.cli.commands import get_exchange_trading_hours
+
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_exchange_trading_hours,
+        exchange=exchange,
         export=export,
         output_dir=output_dir,
         use_home_dir=use_home_dir
