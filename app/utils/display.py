@@ -17,6 +17,7 @@ from app.models.bond import Bond
 from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF
 from app.models.exchange_details import ExchangeSchedule
+from app.models.forex import ForexRate
 from app.models.stock import TimeSeries
 from app.models.symbol import Symbol, Exchange
 
@@ -1462,10 +1463,11 @@ def display_forex_rate(forex_rate: 'ForexRate') -> None:
 
     console.print(panel)
 
+
 def display_detailed_quote(quote, simplified=False):
     """
     Display a single quote with detailed information in a rich format.
-    
+
     Args:
         quote: Quote object to display
         simplified: Whether to show simplified view (less detail)
@@ -1477,25 +1479,25 @@ def display_detailed_quote(quote, simplified=False):
     from rich.columns import Columns
     from rich.layout import Layout
     from app.utils.helpers import format_price, format_change, get_color_for_change, get_local_time, format_datetime
-    
+
     # Format the price and change
     price_text = Text(f"{format_price(quote.price)}")
     price_text.stylize("bold")
-    
+
     change_text = Text(format_change(quote.change, quote.change_percent))
     change_color = get_color_for_change(quote.change)
     change_text.stylize(change_color)
-    
+
     # Create a panel for the main price information
     header = f"[bold]{quote.symbol}"
     if hasattr(quote, 'name') and quote.name:
         header += f" - {quote.name}"
     header += "[/bold]"
-    
+
     # Format timestamp
     local_time = get_local_time(quote.timestamp)
     time_str = format_datetime(local_time, "%Y-%m-%d %H:%M:%S")
-    
+
     if simplified:
         # Simplified view - just the essentials
         main_content = [
@@ -1503,17 +1505,17 @@ def display_detailed_quote(quote, simplified=False):
             f"[bold]Change:[/bold] {change_text}",
             f"[bold]Time:[/bold] {time_str}"
         ]
-        
+
         if hasattr(quote, 'volume') and quote.volume:
             main_content.append(f"[bold]Volume:[/bold] {quote.volume:,}")
-            
+
         main_panel = Panel(
             "\n".join(main_content),
             title=header,
             expand=False
         )
         console.print(main_panel)
-    
+
     else:
         # Full detailed view
         # Create primary info panel
@@ -1523,40 +1525,43 @@ def display_detailed_quote(quote, simplified=False):
             f"[bold]Volume:[/bold] {quote.volume:,}" if quote.volume else "[bold]Volume:[/bold] N/A",
             f"[bold]Time:[/bold] {time_str}"
         ]
-        
+
         primary_panel = Panel(
             "\n".join(primary_info),
             title=header,
             expand=False
         )
-        
+
         # Create OHLC (Open/High/Low/Close) panel
         ohlc_info = [
-            f"[bold]Open:[/bold] {format_price(quote.open_price)}" if quote.open_price else "[bold]Open:[/bold] N/A", 
+            f"[bold]Open:[/bold] {format_price(quote.open_price)}" if quote.open_price else "[bold]Open:[/bold] N/A",
             f"[bold]High:[/bold] {format_price(quote.high_price)}" if quote.high_price else "[bold]High:[/bold] N/A",
             f"[bold]Low:[/bold] {format_price(quote.low_price)}" if quote.low_price else "[bold]Low:[/bold] N/A",
             f"[bold]Previous Close:[/bold] {format_price(quote.previous_close)}" if quote.previous_close else "[bold]Previous Close:[/bold] N/A"
         ]
-        
+
         ohlc_panel = Panel(
             "\n".join(ohlc_info),
             title="[bold]OHLC Data[/bold]",
             expand=False
         )
-        
+
         # Create additional info panel (52-week high/low, etc.)
         if hasattr(quote, 'fifty_two_week_high') or hasattr(quote, 'fifty_two_week_low'):
             additional_info = []
-            
+
             if hasattr(quote, 'fifty_two_week_high') and quote.fifty_two_week_high:
-                additional_info.append(f"[bold]52-Week High:[/bold] {format_price(quote.fifty_two_week_high)}")
-                
+                additional_info.append(
+                    f"[bold]52-Week High:[/bold] {format_price(quote.fifty_two_week_high)}")
+
             if hasattr(quote, 'fifty_two_week_low') and quote.fifty_two_week_low:
-                additional_info.append(f"[bold]52-Week Low:[/bold] {format_price(quote.fifty_two_week_low)}")
-                
+                additional_info.append(
+                    f"[bold]52-Week Low:[/bold] {format_price(quote.fifty_two_week_low)}")
+
             if hasattr(quote, 'currency') and quote.currency:
-                additional_info.append(f"[bold]Currency:[/bold] {quote.currency}")
-                
+                additional_info.append(
+                    f"[bold]Currency:[/bold] {quote.currency}")
+
             # Only create this panel if we have any additional info
             if additional_info:
                 additional_panel = Panel(
@@ -1564,12 +1569,391 @@ def display_detailed_quote(quote, simplified=False):
                     title="[bold]Additional Information[/bold]",
                     expand=False
                 )
-                
+
                 # Display all panels in a column layout
-                console.print(Columns([primary_panel, ohlc_panel, additional_panel]))
+                console.print(
+                    Columns([primary_panel, ohlc_panel, additional_panel]))
             else:
                 # Display just the two main panels
                 console.print(Columns([primary_panel, ohlc_panel]))
         else:
             # Display just the two main panels if no 52-week data
             console.print(Columns([primary_panel, ohlc_panel]))
+
+
+def display_eod_price(eod_data: Dict[str, Any], symbol: str) -> None:
+    """
+    Display End of Day (EOD) price information for a symbol.
+
+    Args:
+        eod_data: Dictionary containing EOD price data
+        symbol: The ticker symbol
+    """
+    if not eod_data:
+        console.print(f"[yellow]No EOD data found for {symbol}.[/yellow]")
+        return
+
+    # Create a panel for the EOD information
+    title = Text(f"End of Day Price: {symbol}", style="bold cyan")
+
+    # Format EOD data
+    date = eod_data.get('datetime', 'N/A')
+    close_price = eod_data.get('close', 'N/A')
+    open_price = eod_data.get('open', 'N/A')
+    high = eod_data.get('high', 'N/A')
+    low = eod_data.get('low', 'N/A')
+    volume = eod_data.get('volume', 'N/A')
+
+    # Calculate change and percent change
+    previous_close = eod_data.get('previous_close')
+    if previous_close and close_price and previous_close != 'N/A' and close_price != 'N/A':
+        change = float(close_price) - float(previous_close)
+        change_percent = (change / float(previous_close)) * 100
+        change_str = f"{change:.2f}"
+        change_percent_str = f"{change_percent:.2f}%"
+
+        # Color code based on change direction
+        change_color = "green" if change >= 0 else "red"
+        change_str = f"[{change_color}]{change_str}[/{change_color}]"
+        change_percent_str = f"[{change_color}]{change_percent_str}[/{change_color}]"
+    else:
+        change_str = "N/A"
+        change_percent_str = "N/A"
+
+    # Create content for the panel
+    content = []
+    content.append(f"Date: {date}")
+    content.append(f"Close: {close_price}")
+    content.append(f"Open: {open_price}")
+    content.append(f"High: {high}")
+    content.append(f"Low: {low}")
+    content.append(f"Volume: {volume}")
+    content.append(f"Change: {change_str}")
+    content.append(f"Change %: {change_percent_str}")
+
+    # If there's additional data, add it to the panel
+    exchange = eod_data.get('exchange')
+    if exchange:
+        content.append(f"Exchange: {exchange}")
+
+    currency = eod_data.get('currency')
+    if currency:
+        content.append(f"Currency: {currency}")
+
+    # Create and display the panel
+    panel = Panel("\n".join(content), title=title, border_style="cyan")
+    console.print(panel)
+
+def display_market_movers(movers: List[Dict[str, Any]], direction: str) -> None:
+    """
+    Display a list of market movers (gainers or losers) in a formatted table.
+    
+    Args:
+        movers: List of dictionaries with market mover data
+        direction: "gainers" for top gainers, "losers" for top losers
+    """
+    if not movers:
+        console.print(f"[yellow]No {direction} found for today.[/yellow]")
+        return
+        
+    # Create an appropriate title
+    title = f"Top {direction.title()} for Today ({len(movers)} stocks)"
+    table = Table(title=title)
+    
+    # Add columns
+    table.add_column("Rank", style="dim")
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Name")
+    table.add_column("Price")
+    table.add_column("Change")
+    table.add_column("% Change")
+    table.add_column("Volume")
+    table.add_column("Exchange")
+    
+    # Add rows
+    for i, mover in enumerate(movers, 1):
+        # Determine color based on change direction
+        change_value = mover.get("change", 0)
+        percent_change = mover.get("percent_change", 0)
+        color = "green" if change_value >= 0 else "red"
+        
+        # Format values
+        price = f"${mover.get('price', 0):.2f}"
+        change = f"[{color}]{change_value:+.2f}[/{color}]"
+        percent = f"[{color}]{percent_change:+.2f}%[/{color}]"
+        
+        # Format volume with commas
+        volume = mover.get("volume")
+        if volume:
+            volume_str = f"{volume:,}"
+        else:
+            volume_str = "N/A"
+            
+        # Add row to table
+        table.add_row(
+            str(i),
+            mover.get("symbol", ""),
+            mover.get("name", "Unknown"),
+            price,
+            change,
+            percent,
+            volume_str,
+            mover.get("exchange", "")
+        )
+        
+    console.print(table)
+
+def display_mutual_funds_detailed(mutual_funds: List[Any], limit: Optional[int] = None) -> None:
+    """
+    Display a detailed list of mutual funds in a formatted table.
+    
+    Args:
+        mutual_funds: List of MutualFund objects to display
+        limit: Maximum number of funds to display
+    """
+    if not mutual_funds:
+        console.print(
+            "[yellow]No mutual funds found matching the criteria.[/yellow]")
+        return
+
+    # Apply limit if specified
+    if limit and len(mutual_funds) > limit:
+        display_funds = mutual_funds[:limit]
+        console.print(
+            f"[blue]Showing {limit} of {len(mutual_funds)} mutual funds.[/blue]")
+    else:
+        display_funds = mutual_funds
+
+    table = Table(
+        title=f"Available Mutual Funds ({len(display_funds)} displayed)")
+
+    # Add columns
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Name", style="white")
+    table.add_column("Fund Family", style="green")
+    table.add_column("Category", style="yellow")
+    table.add_column("Expense Ratio", style="red")
+    table.add_column("Yield", style="green")
+    table.add_column("Rating", style="yellow")
+    table.add_column("Min. Investment", style="blue")
+    table.add_column("Assets", style="magenta")
+
+    # Add rows
+    for fund in display_funds:
+        # Format expense ratio
+        expense_ratio = f"{fund.expense_ratio:.2f}%" if fund.expense_ratio is not None else "N/A"
+        
+        # Format yield
+        fund_yield = f"{fund.yield_percentage:.2f}%" if fund.yield_percentage is not None else "N/A"
+        
+        # Format rating as stars
+        rating = "★" * fund.morningstar_rating if fund.morningstar_rating else "N/A"
+        
+        # Format min investment with comma separator
+        min_investment = f"${fund.minimum_investment:,.0f}" if fund.minimum_investment is not None else "N/A"
+        
+        # Format total assets
+        assets = f"${fund.total_assets:,.1f}M" if fund.total_assets is not None else "N/A"
+        
+        table.add_row(
+            fund.symbol,
+            fund.name,
+            fund.fund_family or "N/A",
+            fund.fund_category or "N/A",
+            expense_ratio,
+            fund_yield,
+            rating,
+            min_investment,
+            assets
+        )
+
+    console.print(table)
+
+
+def display_mutual_fund_profile(mutual_fund: Any) -> None:
+    """
+    Display detailed profile for a single mutual fund.
+    
+    Args:
+        mutual_fund: MutualFund object to display
+    """
+    if not mutual_fund:
+        console.print("[yellow]Mutual fund not found.[/yellow]")
+        return
+        
+    # Create a panel for the mutual fund profile
+    title = Text(f"Mutual Fund Profile: {mutual_fund.symbol}", style="bold cyan")
+    
+    content = []
+    
+    # Basic information section
+    content.append(Text("Basic Information", style="bold underline"))
+    content.append(f"Name: {mutual_fund.name}")
+    content.append(f"Symbol: {mutual_fund.symbol}")
+    content.append(f"Exchange: {mutual_fund.exchange}")
+    content.append(f"Fund Family: {mutual_fund.fund_family or 'N/A'}")
+    content.append(f"Category: {mutual_fund.fund_category or 'N/A'}")
+    content.append(f"Asset Class: {mutual_fund.asset_class or 'N/A'}")
+    if mutual_fund.inception_date:
+        content.append(f"Inception Date: {mutual_fund.inception_date.strftime('%Y-%m-%d')}")
+    content.append("")
+    
+    # Financial information section
+    content.append(Text("Financial Information", style="bold underline"))
+    if mutual_fund.total_assets is not None:
+        content.append(f"Total Assets: ${mutual_fund.total_assets:,.1f} million")
+    if mutual_fund.expense_ratio is not None:
+        content.append(f"Expense Ratio: {mutual_fund.expense_ratio:.2f}%")
+    if mutual_fund.net_expense_ratio is not None:
+        content.append(f"Net Expense Ratio: {mutual_fund.net_expense_ratio:.2f}%")
+    if mutual_fund.gross_expense_ratio is not None:
+        content.append(f"Gross Expense Ratio: {mutual_fund.gross_expense_ratio:.2f}%")
+    if mutual_fund.management_fee is not None:
+        content.append(f"Management Fee: {mutual_fund.management_fee:.2f}%")
+    if mutual_fund.yield_percentage is not None:
+        content.append(f"Yield: {mutual_fund.yield_percentage:.2f}%")
+    if mutual_fund.turnover_ratio is not None:
+        content.append(f"Turnover Ratio: {mutual_fund.turnover_ratio:.2f}%")
+    content.append("")
+    
+    # Investment details
+    content.append(Text("Investment Details", style="bold underline"))
+    if mutual_fund.minimum_investment is not None:
+        content.append(f"Minimum Investment: ${mutual_fund.minimum_investment:,.2f}")
+    if mutual_fund.morningstar_rating:
+        stars = "★" * mutual_fund.morningstar_rating
+        content.append(f"Morningstar Rating: {stars} ({mutual_fund.morningstar_rating}/5)")
+    content.append("")
+    
+    # Investment objective
+    if mutual_fund.investment_objective:
+        content.append(Text("Investment Objective", style="bold underline"))
+        content.append(mutual_fund.investment_objective)
+    
+    # Create panel with all sections
+    panel_content = "\n".join(str(line) for line in content)
+    panel = Panel(panel_content, title=title, border_style="cyan", expand=False)
+    
+    console.print(panel)
+
+def display_fund_families(fund_families: List[Any], limit: Optional[int] = None) -> None:
+    """
+    Display a list of fund families in a formatted table.
+    
+    Args:
+        fund_families: List of FundFamily objects to display
+        limit: Maximum number of fund families to display
+    """
+    if not fund_families:
+        console.print("[yellow]No fund families found.[/yellow]")
+        return
+
+    # Apply limit if specified
+    if limit and limit > 0 and len(fund_families) > limit:
+        display_families = fund_families[:limit]
+        console.print(
+            f"[blue]Showing {limit} of {len(fund_families)} fund families.[/blue]")
+    else:
+        display_families = fund_families
+
+    table = Table(
+        title=f"Mutual Fund Families ({len(display_families)} displayed)")
+
+    # Add columns
+    table.add_column("Rank", style="dim", width=6)
+    table.add_column("Fund Family", style="green")
+    table.add_column("Funds", justify="right")
+    table.add_column("Country", style="blue")
+    
+    if any(f.aum is not None for f in display_families):
+        table.add_column("AUM", style="cyan", justify="right")
+        
+    if any(f.founded_year is not None for f in display_families):
+        table.add_column("Founded", justify="right")
+        
+    if any(f.headquarters is not None for f in display_families):
+        table.add_column("Headquarters")
+
+    # Add rows
+    for i, family in enumerate(display_families, 1):
+        row = [
+            str(i),
+            family.name,
+            str(family.fund_count),
+            family.country or "N/A"
+        ]
+        
+        if any(f.aum is not None for f in display_families):
+            aum_str = f"${family.aum:,.1f}B" if family.aum is not None else "N/A"
+            row.append(aum_str)
+            
+        if any(f.founded_year is not None for f in display_families):
+            row.append(str(family.founded_year) if family.founded_year else "N/A")
+            
+        if any(f.headquarters is not None for f in display_families):
+            row.append(family.headquarters or "N/A")
+
+        table.add_row(*row)
+
+    console.print(table)
+
+
+def display_fund_family_details(fund_family: Any) -> None:
+    """
+    Display detailed information for a specific fund family.
+    
+    Args:
+        fund_family: FundFamily object to display
+    """
+    if not fund_family:
+        console.print("[yellow]Fund family not found.[/yellow]")
+        return
+        
+    # Create a panel for the fund family details
+    title = Text(f"Fund Family Profile: {fund_family.name}", style="bold green")
+    
+    content = []
+    
+    # Basic information section
+    content.append(Text("Basic Information", style="bold underline"))
+    content.append(f"Name: {fund_family.name}")
+    content.append(f"Total Funds: {fund_family.fund_count}")
+    
+    if fund_family.country:
+        content.append(f"Country: {fund_family.country}")
+        
+    if fund_family.headquarters:
+        content.append(f"Headquarters: {fund_family.headquarters}")
+        
+    if fund_family.founded_year:
+        content.append(f"Founded: {fund_family.founded_year}")
+        
+    if fund_family.website:
+        content.append(f"Website: {fund_family.website}")
+    
+    content.append("")
+    
+    # Fund information section
+    content.append(Text("Fund Information", style="bold underline"))
+    
+    if fund_family.mutual_fund_count is not None:
+        content.append(f"Mutual Funds: {fund_family.mutual_fund_count}")
+        
+    if fund_family.etf_count is not None:
+        content.append(f"ETFs: {fund_family.etf_count}")
+        
+    if fund_family.aum is not None:
+        content.append(f"Assets Under Management: ${fund_family.aum:,.2f} billion")
+    
+    content.append("")
+    
+    # Description section
+    if fund_family.description:
+        content.append(Text("Description", style="bold underline"))
+        content.append(fund_family.description)
+    
+    # Create panel with all sections
+    panel_content = "\n".join(str(line) for line in content)
+    panel = Panel(panel_content, title=title, border_style="green", expand=False)
+    
+    console.print(panel)

@@ -3,6 +3,7 @@ CLI commands for the stock application.
 """
 
 import csv
+import json
 import click
 import time
 import threading
@@ -17,12 +18,12 @@ from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF
 from app.models.stock import Quote
 from app.models.symbol import Symbol
-from app.utils.display import create_progress_spinner, display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_cross_listed_symbols, display_etfs, display_etfs_detailed
+from app.utils.display import create_progress_spinner, display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_cross_listed_symbols, display_eod_price, display_etfs, display_etfs_detailed, display_fund_families, display_funds_table, display_market_movers, display_mutual_fund_profile, display_mutual_funds_detailed
 from app.utils.helpers import (
     display_quotes_table, clear_screen
 )
 from app.utils.export import (
-    export_quotes, get_default_export_dir, get_home_export_dir
+    ensure_directory, export_quotes, get_default_export_dir, get_home_export_dir
 )
 
 # Set up logging
@@ -3101,3 +3102,495 @@ def fetch_and_display_single_quote(symbol, simple=False, export_formats=None, ou
     except Exception as e:
         logger.exception(f"Unexpected error fetching latest quote: {e}")
         click.echo(f"Unexpected error: {e}", err=True)
+
+@stock.command(name="eod")
+@click.argument("symbol", required=True)
+@click.option("--date", "-d", help="Specific date in YYYY-MM-DD format (defaults to latest available)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export EOD data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def eod_command(symbol: str, date: str, export: str, output_dir: str, use_home_dir: bool):
+    """
+    Get the latest End of Day (EOD) price for a symbol.
+    
+    SYMBOL is the ticker symbol to get EOD data for (e.g., AAPL)
+    """
+    try:
+        # Create a progress spinner
+        with create_progress_spinner(f"Fetching EOD data for {symbol}...") as progress:
+            progress.add_task("Loading...", total=None)
+            
+            # Get the EOD data
+            eod_data = client.get_eod_price(symbol.upper(), date)
+            
+        # Display the EOD data
+        display_eod_price(eod_data, symbol.upper())
+        
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+            
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+            
+            # Export the data
+            from app.utils.export import export_to_json
+            
+            result_paths = {}
+            if 'json' in export_formats:
+                filename = f"eod_{symbol.upper()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                filepath = export_output_dir / filename
+                if export_to_json(eod_data, filepath):
+                    result_paths['json'] = str(filepath)
+            
+            if 'csv' in export_formats:
+                filename = f"eod_{symbol.upper()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                filepath = export_output_dir / filename
+                
+                # Create CSV file manually as we don't have a dedicated EOD model with csv export
+                with open(filepath, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=list(eod_data.keys()))
+                    writer.writeheader()
+                    writer.writerow({k: v for k, v in eod_data.items()})
+                    result_paths['csv'] = str(filepath)
+            
+            # Display export results
+            if result_paths:
+                click.echo("\nExported EOD data to:")
+                for fmt, path in result_paths.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+    
+    except TwelveDataAPIError as e:
+        click.echo(f"API Error: {e}", err=True)
+    except Exception as e:
+        logger.error(f"Error fetching EOD data: {e}", exc_info=True)
+        click.echo(f"Error: {e}", err=True)
+
+@stock.command(name="gainers")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ', 'NYSE')")
+@click.option("--limit", "-l", type=int, default=10, help="Maximum number of stocks to display")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def gainers_command(exchange: str, limit: int, export: str, output_dir: str, use_home_dir: bool):
+    """
+    Get the top gaining stocks for the day.
+    """
+    _fetch_and_display_market_movers("gainers", exchange, limit, export, output_dir, use_home_dir)
+    
+    
+@stock.command(name="losers")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ', 'NYSE')")
+@click.option("--limit", "-l", type=int, default=10, help="Maximum number of stocks to display")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def losers_command(exchange: str, limit: int, export: str, output_dir: str, use_home_dir: bool):
+    """
+    Get the top losing stocks for the day.
+    """
+    _fetch_and_display_market_movers("losers", exchange, limit, export, output_dir, use_home_dir)
+
+
+def _fetch_and_display_market_movers(direction: str, exchange: Optional[str], limit: int, 
+                                    export: Optional[str], output_dir: Optional[str], 
+                                    use_home_dir: bool) -> None:
+    """
+    Helper function to fetch and display market movers.
+    
+    Args:
+        direction: "gainers" for top gainers, "losers" for top losers
+        exchange: Optional exchange to filter by
+        limit: Maximum number of stocks to display
+        export: Export format choice
+        output_dir: Output directory for export
+        use_home_dir: Whether to use the home directory for export
+    """
+    try:
+        # Create a progress spinner
+        direction_name = "gainers" if direction == "gainers" else "losers"
+        with create_progress_spinner(f"Fetching top {direction_name}...") as progress:
+            progress.add_task("Loading...", total=None)
+            
+            # Get the market movers
+            movers = client.get_market_movers(direction, exchange, limit)
+            
+        # Display the movers
+        display_market_movers(movers, direction_name)
+        
+        # Export if requested
+        if export and movers:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+            
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+                
+            # Current timestamp for filename
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            result_paths = {}
+            
+            # Export to JSON
+            if 'json' in export_formats:
+                filename = f"market_{direction_name}_{current_time}.json"
+                filepath = export_output_dir / filename
+                
+                try:
+                    ensure_directory(filepath)
+                    with open(filepath, 'w') as f:
+                        json.dump(movers, f, indent=2, default=str)
+                    result_paths['json'] = str(filepath)
+                except Exception as e:
+                    logger.error(f"Error exporting to JSON: {e}")
+                    click.echo(f"Error exporting to JSON: {e}", err=True)
+            
+            # Export to CSV
+            if 'csv' in export_formats:
+                filename = f"market_{direction_name}_{current_time}.csv"
+                filepath = export_output_dir / filename
+                
+                try:
+                    ensure_directory(filepath)
+                    with open(filepath, 'w', newline='') as f:
+                        if movers:
+                            fieldnames = movers[0].keys()
+                            writer = csv.DictWriter(f, fieldnames=fieldnames)
+                            writer.writeheader()
+                            for mover in movers:
+                                writer.writerow(mover)
+                            result_paths['csv'] = str(filepath)
+                except Exception as e:
+                    logger.error(f"Error exporting to CSV: {e}")
+                    click.echo(f"Error exporting to CSV: {e}", err=True)
+            
+            # Display export results
+            if result_paths:
+                click.echo("\nExported market movers data to:")
+                for fmt, path in result_paths.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+    
+    except TwelveDataAPIError as e:
+        logger.error(f"API Error: {e}")
+        click.echo(f"API Error: {e}", err=True)
+    except Exception as e:
+        logger.error(f"Error fetching market movers: {e}", exc_info=True)
+        click.echo(f"Error: {e}", err=True)
+
+@stock.group(name="mutual-funds")
+def mutual_funds():
+    """Commands for accessing mutual fund data."""
+    pass
+
+
+@mutual_funds.command(name="list")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--family", "-f", help="Filter by fund family (e.g., 'Vanguard')")
+@click.option("--search", "-s", help="Search by name or symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of funds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_mutual_funds_detailed(exchange, country, family, search, limit, detailed,
+                      export, output_dir, use_home_dir):
+    """
+    List available mutual funds with detailed information and filtering.
+
+    Examples:
+    \b
+    # List all mutual funds (limited to 100 by default)
+    stockcli stock mutual-funds list
+
+    # List Vanguard mutual funds with detailed information
+    stockcli stock mutual-funds list --family Vanguard --detailed
+
+    # Search for mutual funds containing 'Index' in the name
+    stockcli stock mutual-funds list --search Index
+    """
+    try:
+        with create_progress_spinner("Fetching mutual funds...") as progress:
+            progress.add_task("Loading...", total=None)
+            
+            # Get mutual funds from the API
+            funds = client.get_mutual_funds(exchange=exchange, country=country)
+            
+            # Filter by fund family if specified
+            if family:
+                funds = [f for f in funds if family.lower() in (f.get('fund_family', '') or '').lower()]
+                
+            # Filter by search term if specified
+            if search:
+                search_term = search.lower()
+                funds = [
+                    f for f in funds 
+                    if search_term in f.get('symbol', '').lower() 
+                    or search_term in f.get('name', '').lower()
+                    or search_term in (f.get('fund_category', '') or '').lower()
+                ]
+            
+            # Convert API response to MutualFund objects
+            from app.models.mutual_fund import MutualFund
+            mutual_funds = [MutualFund.from_api_response(f) for f in funds]
+            
+            # Sort mutual funds by name
+            mutual_funds.sort(key=lambda x: x.name)
+        
+        # Display the mutual funds
+        if detailed:
+            display_mutual_funds_detailed(mutual_funds, limit)
+        else:
+            display_funds_table(mutual_funds, limit, detailed)
+            
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+                
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+                
+            # Export the data
+            from app.utils.export import export_items
+            
+            result = export_items(
+                mutual_funds, 
+                'mutual_funds', 
+                export_formats, 
+                export_output_dir
+            )
+            
+            if result:
+                click.echo("\nExported mutual funds to:")
+                for fmt, path in result.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+                    
+    except TwelveDataAPIError as e:
+        click.echo(f"API Error: {e}", err=True)
+    except Exception as e:
+        logger.error(f"Error listing mutual funds: {e}", exc_info=True)
+        click.echo(f"Error: {e}", err=True)
+
+
+@mutual_funds.command(name="info")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_mutual_fund_profile(symbol, export, output_dir, use_home_dir):
+    """
+    Get detailed profile information for a specific mutual fund.
+
+    SYMBOL is the mutual fund symbol (e.g., VTSAX, FXAIX)
+
+    Examples:
+    \b
+    # Get detailed information for Vanguard Total Stock Market Index Fund
+    stockcli stock mutual-funds info VTSAX
+
+    # Export detailed information for Fidelity 500 Index Fund
+    stockcli stock mutual-funds info FXAIX --export json
+    """
+    try:
+        with create_progress_spinner(f"Fetching mutual fund profile for {symbol}...") as progress:
+            progress.add_task("Loading...", total=None)
+            
+            # Get the mutual fund info from the API
+            fund_data = client.get_mutual_fund_info(symbol.upper())
+            
+            if not fund_data:
+                click.echo(f"No mutual fund found with symbol: {symbol}", err=True)
+                return
+                
+            # Convert to MutualFund object
+            from app.models.mutual_fund import MutualFund
+            mutual_fund = MutualFund.from_api_response(fund_data)
+            
+        # Display the mutual fund profile
+        display_mutual_fund_profile(mutual_fund)
+        
+        # Export if requested
+        if export:
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+                
+            # Export to requested format
+            result = {}
+            if export == 'json':
+                # Export to JSON
+                filename = f"mutual_fund_{symbol.upper()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                filepath = export_output_dir / filename
+                
+                from app.utils.export import export_to_json
+                if export_to_json(mutual_fund.to_dict(), filepath):
+                    result['json'] = str(filepath)
+            elif export == 'csv':
+                # Export to CSV
+                filename = f"mutual_fund_{symbol.upper()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                filepath = export_output_dir / filename
+                
+                with open(filepath, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=mutual_fund.get_csv_header())
+                    writer.writeheader()
+                    writer.writerow(mutual_fund.to_csv_row())
+                    result['csv'] = str(filepath)
+                    
+            # Display export results
+            if result:
+                click.echo("\nExported mutual fund data to:")
+                for fmt, path in result.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+                    
+    except TwelveDataAPIError as e:
+        click.echo(f"API Error: {e}", err=True)
+    except Exception as e:
+        logger.error(f"Error getting mutual fund profile: {e}", exc_info=True)
+        click.echo(f"Error: {e}", err=True)
+
+@mutual_funds.command(name="families")
+@click.option("--search", "-s", help="Search by name")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--limit", "-l", type=int, default=25,
+              help="Maximum number of fund families to display (default: 25, 0 for all)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_fund_families(search, country, limit, export, output_dir, use_home_dir):
+    """
+    List available mutual fund families/companies.
+    
+    A fund family is a company that manages a group of mutual funds, like Vanguard or Fidelity.
+
+    Examples:
+    \b
+    # List all fund families (limited to 25 by default)
+    stockcli stock mutual-funds families
+
+    # List fund families containing 'Van' in their name
+    stockcli stock mutual-funds families --search Van
+
+    # List up to 10 fund families from a specific country
+    stockcli stock mutual-funds families --country "United States" --limit 10
+    """
+    try:
+        with create_progress_spinner("Fetching fund families...") as progress:
+            progress.add_task("Loading...", total=None)
+            
+            # Get fund families from the API
+            families = client.get_fund_families()
+            
+            # Apply filters
+            if search:
+                search_term = search.lower()
+                families = [f for f in families if search_term in f['name'].lower()]
+                
+            if country:
+                country_term = country.lower()
+                families = [f for f in families if country_term in (f.get('country') or '').lower()]
+            
+            # Convert to FundFamily objects
+            from app.models.fund import FundFamily
+            fund_families = [FundFamily.from_dict(f) for f in families]
+        
+        # Display the fund families
+        display_fund_families(fund_families, limit)
+        
+        # Export if requested
+        if export and fund_families:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+                
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+                
+            # Export the data
+            from app.utils.export import export_items
+            
+            result = export_items(
+                fund_families, 
+                'fund_families', 
+                export_formats, 
+                export_output_dir
+            )
+            
+            if result:
+                click.echo("\nExported fund families to:")
+                for fmt, path in result.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+                    
+    except TwelveDataAPIError as e:
+        click.echo(f"API Error: {e}", err=True)
+    except Exception as e:
+        logger.error(f"Error listing fund families: {e}", exc_info=True)
+        click.echo(f"Error: {e}", err=True)

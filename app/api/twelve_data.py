@@ -1261,7 +1261,6 @@ class TwelveDataClient:
                 f"Unexpected error fetching time series for {symbol}: {e}")
             raise TwelveDataAPIError(f"Error fetching time series: {str(e)}")
 
-
     def get_exchange_rate(self, symbol: str) -> Dict[str, Any]:
         """
         Fetch real-time exchange rate for a currency pair from the TwelveData API.
@@ -1305,6 +1304,233 @@ class TwelveDataClient:
             logger.error(
                 f"Unexpected error fetching exchange rate for {symbol}: {e}")
             raise TwelveDataAPIError(f"Error fetching exchange rate: {str(e)}")
+
+    def get_eod_price(self, symbol: str, date: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Fetch the latest End of Day (EOD) price for a symbol.
+
+        Args:
+            symbol: The ticker symbol to get EOD data for
+            date: Optional specific date in format YYYY-MM-DD (defaults to latest available EOD)
+
+        Returns:
+            Dictionary containing EOD price data
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        endpoint = "/eod"
+        params = {
+            'symbol': symbol
+        }
+
+        if date:
+            params['date'] = date
+
+        logger.debug(f"Fetching EOD price for {symbol}, date={date}")
+        return self._make_request(endpoint, params)
+
+    def get_market_movers(self, direction: str = "gainers", exchange: Optional[str] = None,
+                          limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Fetch the top gaining or losing stocks for the day.
+
+        Args:
+            direction: "gainers" for top gainers, "losers" for top losers
+            exchange: Optional exchange to filter by (e.g., "NASDAQ", "NYSE")
+            limit: Maximum number of stocks to return (default 10)
+
+        Returns:
+            List of dictionaries containing stock data sorted by price change
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+            ValueError: If direction is not "gainers" or "losers"
+        """
+        if direction not in ["gainers", "losers"]:
+            raise ValueError('Direction must be either "gainers" or "losers"')
+
+        # This API endpoint might vary by provider, but we'll simulate it
+        # by fetching multiple stock quotes and sorting them
+        # First, get a list of major stocks (TwelveData doesn't directly have a movers endpoint)
+        endpoint = "/stocks"
+        params = {
+            "exchange": exchange if exchange else "NASDAQ"  # Default to NASDAQ
+        }
+        logger.debug(
+            f"Fetching stocks for market movers, direction={direction}, exchange={exchange}")
+
+        # Get list of stocks
+        try:
+            stocks_response = self._make_request(endpoint, params)
+            if not isinstance(stocks_response, dict) or "data" not in stocks_response:
+                raise TwelveDataAPIError(
+                    "Unexpected response format from stocks endpoint")
+
+            stocks = stocks_response.get("data", [])
+
+            # Take only the first 30 stocks to avoid too many API calls
+            top_stocks = stocks[:30]
+            symbols = [stock["symbol"] for stock in top_stocks]
+
+            if not symbols:
+                logger.warning("No symbols found for market movers")
+                return []
+
+            # Get quotes for these stocks
+            symbols_str = ",".join(symbols)
+            quotes_endpoint = "/quote"
+            quotes_params = {
+                "symbol": symbols_str
+            }
+
+            quotes_response = self._make_request(
+                quotes_endpoint, quotes_params)
+
+            # Ensure we have a list of quotes
+            if isinstance(quotes_response, dict) and "symbol" in quotes_response:
+                # Single quote response
+                quotes_list = [quotes_response]
+            elif isinstance(quotes_response, list):
+                quotes_list = quotes_response
+            else:
+                logger.error(
+                    f"Unexpected format for quotes response: {quotes_response}")
+                return []
+
+            # Process and sort the quotes
+            movers = []
+            for quote in quotes_list:
+                # Only include quotes with valid change percent
+                if "percent_change" in quote and quote["percent_change"] is not None:
+                    try:
+                        # Add the quote to movers list with additional stock details
+                        stock_info = next(
+                            (s for s in top_stocks if s["symbol"] == quote["symbol"]), {})
+
+                        # Create a mover entry combining quote and stock info
+                        mover = {
+                            "symbol": quote["symbol"],
+                            "name": quote.get("name", stock_info.get("name", "Unknown")),
+                            "exchange": quote.get("exchange", stock_info.get("exchange", "Unknown")),
+                            "price": float(quote.get("close", quote.get("price", 0))),
+                            "change": float(quote.get("change", 0)),
+                            "percent_change": float(quote.get("percent_change", 0)),
+                            "volume": int(quote.get("volume", 0)) if quote.get("volume") else None
+                        }
+                        movers.append(mover)
+                    except (ValueError, TypeError) as e:
+                        logger.warning(
+                            f"Error processing quote for {quote.get('symbol')}: {e}")
+                        continue
+
+            # Sort by percent change
+            if direction == "gainers":
+                movers.sort(key=lambda x: x["percent_change"], reverse=True)
+            else:  # losers
+                movers.sort(key=lambda x: x["percent_change"])
+
+            # Apply the limit
+            return movers[:limit]
+
+        except Exception as e:
+            logger.error(f"Error fetching market movers: {e}")
+            raise TwelveDataAPIError(
+                f"Failed to fetch market movers: {e}") from e
+
+    def get_mutual_fund_info(self, symbol: str) -> Dict[str, Any]:
+        """
+        Fetch detailed information for a specific mutual fund.
+
+        Args:
+            symbol: The mutual fund symbol (e.g., 'VTSAX')
+
+        Returns:
+            Dictionary containing detailed mutual fund data
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        # Use the stocks endpoint with additional parameters to get fund info
+        endpoint = "/stocks"
+        params = {
+            'symbol': symbol,
+            'type': 'mutual_fund',
+            'show_plan': 'true'  # Request additional details
+        }
+
+        logger.debug(f"Fetching detailed mutual fund info for {symbol}")
+
+        response = self._make_request(endpoint, params)
+
+        if not isinstance(response, dict) or "data" not in response:
+            raise TwelveDataAPIError("Unexpected response format from API")
+
+        funds_data = response.get("data", [])
+
+        if not funds_data:
+            logger.warning(f"No mutual fund found for symbol {symbol}")
+            return {}
+
+        # Return the first matching fund (should be only one)
+        return funds_data[0]
+
+    def get_fund_families(self) -> List[Dict[str, Any]]:
+        """
+        Get a list of mutual fund families/companies.
+
+        Returns:
+            List of dictionaries with fund family data
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        # This endpoint may not directly exist in TwelveData API,
+        # so we'll derive it by analyzing mutual funds
+
+        logger.debug("Fetching mutual fund families")
+
+        try:
+            # First, get a list of mutual funds
+            funds = self.get_mutual_funds()
+
+            if not funds:
+                return []
+
+            # Extract and count unique fund families
+            family_counts = {}
+            family_countries = {}
+
+            for fund in funds:
+                family = fund.get('fund_family') or fund.get('issuer')
+                if not family:
+                    continue
+
+                if family not in family_counts:
+                    family_counts[family] = 0
+                    family_countries[family] = fund.get('country', '')
+
+                family_counts[family] += 1
+
+            # Convert to list of fund family objects
+            result = []
+            for family, count in family_counts.items():
+                family_data = {
+                    'name': family,
+                    'fund_count': count,
+                    'country': family_countries.get(family, '')
+                }
+                result.append(family_data)
+
+            # Sort by fund count (descending) and then name
+            result.sort(key=lambda x: (-x['fund_count'], x['name']))
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error fetching fund families: {e}")
+            raise TwelveDataAPIError(
+                f"Failed to get fund families: {e}") from e
 
 
 # Initialize the TwelveData client

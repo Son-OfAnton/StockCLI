@@ -1067,6 +1067,7 @@ def time_series_shortcut(symbol, interval, outputsize, start_date, end_date, ord
         use_home_dir=use_home_dir
     )
 
+
 @forex_shortcut.command(name="rate")
 @click.argument("symbol", required=True)
 @click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
@@ -1086,6 +1087,7 @@ def exchange_rate_shortcut(symbol, export, output_dir, use_home_dir):
         output_dir=output_dir,
         use_home_dir=use_home_dir
     )
+
 
 @cli.command(name="latest-quote")
 @click.argument("symbol", required=True)
@@ -1108,6 +1110,161 @@ def latest_quote_shortcut(symbol, refresh, interval, simple, export, output_dir,
         refresh=refresh,
         interval=interval,
         simple=simple,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.command(name="eod")
+@click.argument("symbol", required=True)
+@click.option("--date", "-d", help="Specific date in YYYY-MM-DD format (defaults to latest available)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export EOD data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def eod_shortcut(symbol: str, date: str, export: str, output_dir: str, use_home_dir: bool):
+    """Shortcut for 'stock eod' command."""
+    from app.cli.commands import eod_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        eod_command,
+        symbol=symbol,
+        date=date,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.command(name="gainers")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ', 'NYSE')")
+@click.option("--limit", "-l", type=int, default=10, help="Maximum number of stocks to display")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def gainers_shortcut(exchange: str, limit: int, export: str, output_dir: str, use_home_dir: bool):
+    """Shortcut for 'stock gainers' command."""
+    from app.cli.commands import gainers_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        gainers_command,
+        exchange=exchange,
+        limit=limit,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.command(name="losers")
+@click.option("--exchange", "-e", help="Filter by exchange (e.g., 'NASDAQ', 'NYSE')")
+@click.option("--limit", "-l", type=int, default=10, help="Maximum number of stocks to display")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def losers_shortcut(exchange: str, limit: int, export: str, output_dir: str, use_home_dir: bool):
+    """Shortcut for 'stock losers' command."""
+    from app.cli.commands import losers_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        losers_command,
+        exchange=exchange,
+        limit=limit,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.group(name="mutual-funds")
+def mutual_funds_shortcut():
+    """Shortcut for 'stock mutual-funds' commands."""
+    pass
+
+
+@mutual_funds_shortcut.command(name="list")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--family", "-f", help="Filter by fund family (e.g., 'Vanguard')")
+@click.option("--search", "-s", help="Search by name or symbol")
+@click.option("--limit", "-l", type=int, default=100,
+              help="Maximum number of funds to display (default: 100, 0 for all)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_mutual_funds_shortcut(exchange, country, family, search, limit, detailed,
+                               export, output_dir, use_home_dir):
+    """List available mutual funds with detailed information and filtering."""
+    from app.cli.commands import list_mutual_funds_detailed
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_mutual_funds_detailed,
+        exchange=exchange,
+        country=country,
+        family=family,
+        search=search,
+        limit=limit,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@mutual_funds_shortcut.command(name="info")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_mutual_fund_profile_shortcut(symbol, export, output_dir, use_home_dir):
+    """Get detailed profile information for a specific mutual fund."""
+    from app.cli.commands import get_mutual_fund_profile
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_mutual_fund_profile,
+        symbol=symbol,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@mutual_funds_shortcut.command(name="families")
+@click.option("--search", "-s", help="Search by name")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--limit", "-l", type=int, default=25,
+              help="Maximum number of fund families to display (default: 25, 0 for all)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_fund_families_shortcut(search, country, limit, export, output_dir, use_home_dir):
+    """List available mutual fund families/companies."""
+    from app.cli.commands import list_fund_families
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_fund_families,
+        search=search,
+        country=country,
+        limit=limit,
         export=export,
         output_dir=output_dir,
         use_home_dir=use_home_dir
