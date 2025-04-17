@@ -1475,86 +1475,123 @@ class TwelveDataClient:
         # Return the first matching fund (should be only one)
         return funds_data[0]
 
-    def get_fund_families(self, 
-                          search: Optional[str] = None,
-                          country: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_fund_families(self, search: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Get a list of mutual fund families/companies using the dedicated endpoint.
-        
+        Fetch list of fund families from the TwelveData API.
+
         Args:
-            search: Optional search term to filter fund families by name
-            country: Optional country filter
-            
+            search: Optional search term to filter fund families
+
         Returns:
-            List of dictionaries with fund family data
-            
+            List of dictionaries containing fund family information
+
         Raises:
             TwelveDataAPIError: If the API request fails
         """
-        endpoint = "/mutual_funds/family"
+        # Endpoint for fund families, modify according to actual TwelveData API structure
+        endpoint = "/fund_families"  # This endpoint might not exist in TwelveData API
         params = {}
-        
-        # Add optional filters
+
         if search:
             params['search'] = search
-        if country:
-            params['country'] = country
-            
-        logger.debug(f"Fetching mutual fund families with params: {params}")
-        
+
+        logger.debug(f"Fetching fund families with search={search}")
+
         try:
-            response = self._make_request(endpoint, params)
-            
-            # Check if response is in the expected format
-            if not isinstance(response, dict) or "data" not in response:
-                logger.error(f"Unexpected response format for fund families: {response}")
-                raise TwelveDataAPIError("Unexpected response format from fund families endpoint")
-            
-            # Extract and return the data
-            families = response.get("data", [])
-            
-            # Sort by fund count (descending) and then name
-            families.sort(key=lambda x: (-x.get('fund_count', 0), x.get('name', '')))
-            
-            return families
-            
+            # Since TwelveData might not have a dedicated endpoint for fund families,
+            # we need to simulate it by aggregating fund family data from mutual funds
+
+            # Step 1: Get mutual funds
+            mutual_funds = self.get_mutual_funds()
+
+            # Step 2: Extract and aggregate fund family information
+            families = {}
+
+            for fund in mutual_funds:
+                family_name = fund.get('fund_family') or fund.get(
+                    'issuer', 'Unknown')
+                if not family_name or family_name == 'Unknown':
+                    continue
+
+                # Filter by search term if provided
+                if search and search.lower() not in family_name.lower():
+                    continue
+
+                if family_name not in families:
+                    # Initialize new family entry
+                    families[family_name] = {
+                        "name": family_name,
+                        "fund_count": 1,
+                        "popular_funds": [fund.get('name')],
+                        "headquarters": "N/A",  # These fields would come from a real API
+                        "founded": "N/A",
+                        "aum": "N/A",
+                        "website": "N/A",
+                        "description": ""
+                    }
+                else:
+                    # Update existing family entry
+                    families[family_name]["fund_count"] += 1
+                    if fund.get('name') and len(families[family_name]["popular_funds"]) < 10:
+                        families[family_name]["popular_funds"].append(
+                            fund.get('name'))
+
+            # Step 3: Return sorted list of families
+            result = list(families.values())
+            result.sort(key=lambda x: x["name"])
+
+            return result
+
         except Exception as e:
             logger.error(f"Error fetching fund families: {e}")
-            raise TwelveDataAPIError(f"Failed to get fund families: {e}") from e
-            
-            
-    def get_fund_family_details(self, family_id: str) -> Dict[str, Any]:
+            raise TwelveDataAPIError(
+                f"Failed to fetch fund families: {e}") from e
+
+    def get_fund_family_detail(self, family_name: str) -> Dict[str, Any]:
         """
-        Get detailed information about a specific fund family.
-        
+        Fetch detailed information about a specific fund family.
+
         Args:
-            family_id: The ID or name of the fund family
-            
+            family_name: The name of the fund family (e.g., 'Vanguard')
+
         Returns:
-            Dictionary with detailed fund family information
-            
+            Dictionary containing detailed fund family information
+
         Raises:
             TwelveDataAPIError: If the API request fails
         """
-        endpoint = "/mutual_funds/family"
-        params = {
-            'id': family_id
-        }
-        
-        logger.debug(f"Fetching details for fund family: {family_id}")
-        
+        logger.debug(f"Fetching fund family detail for {family_name}")
+
         try:
-            response = self._make_request(endpoint, params)
-            
-            # If the response is a list, take the first item
-            if isinstance(response, list) and len(response) > 0:
-                return response[0]
-                
-            return response
-            
+            # Get all funds from the family
+            mutual_funds = self.get_mutual_funds()
+
+            family_funds = [fund for fund in mutual_funds
+                            if family_name.lower() in (fund.get('fund_family', '') or '').lower()]
+
+            if not family_funds:
+                logger.warning(f"No funds found for family: {family_name}")
+                return {}
+
+            # Construct family detail from fund data
+            family_detail = {
+                "name": family_name,
+                "fund_count": len(family_funds),
+                "popular_funds": [fund.get('name', 'Unknown Fund') for fund in family_funds],
+                "headquarters": "N/A",  # These would come from a real API
+                "founded": "N/A",
+                "aum": "N/A",
+                "website": "N/A",
+                "description": f"Details for {family_name} investment management company."
+            }
+
+            return family_detail
+
         except Exception as e:
-            logger.error(f"Error fetching fund family details: {e}")
-            raise TwelveDataAPIError(f"Failed to get fund family details: {e}") from e
+            logger.error(f"Error fetching fund family detail: {e}")
+            raise TwelveDataAPIError(
+                f"Failed to fetch fund family detail: {e}") from e
+
 
 # Initialize the TwelveData client
 client = TwelveDataClient()

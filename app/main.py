@@ -1246,24 +1246,22 @@ def get_mutual_fund_profile_shortcut(symbol, export, output_dir, use_home_dir):
 
 
 @mutual_funds_shortcut.command(name="families")
-@click.option("--search", "-s", help="Search by name")
-@click.option("--country", "-c", help="Filter by country")
-@click.option("--limit", "-l", type=int, default=25,
-              help="Maximum number of fund families to display (default: 25, 0 for all)")
+@click.option("--search", "-s", help="Search for fund families by name")
+@click.option("--limit", "-l", type=int, default=50,
+              help="Maximum number of fund families to display (default: 50, 0 for all)")
 @click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
               help="Export results to file format")
 @click.option("--output-dir", type=click.Path(file_okay=False),
               help="Directory to save exported files")
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
-def list_fund_families_shortcut(search, country, limit, export, output_dir, use_home_dir):
-    """List available mutual fund families/companies."""
+def list_fund_families_shortcut(search: str, limit: int, export: str, output_dir: str, use_home_dir: bool):
+    """List available fund families with optional filtering."""
     from app.cli.commands import list_fund_families
     ctx = click.get_current_context()
     ctx.invoke(
         list_fund_families,
         search=search,
-        country=country,
         limit=limit,
         export=export,
         output_dir=output_dir,
@@ -1271,21 +1269,21 @@ def list_fund_families_shortcut(search, country, limit, export, output_dir, use_
     )
 
 
-@mutual_funds_shortcut.command(name="family-details")
-@click.argument("family_id", required=True)
+@mutual_funds_shortcut.command(name="family")
+@click.argument("name", required=True)
 @click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
               help="Export results to file format")
 @click.option("--output-dir", type=click.Path(file_okay=False),
               help="Directory to save exported files")
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
-def get_fund_family_details_shortcut(family_id, export, output_dir, use_home_dir):
+def get_fund_family_detail_shortcut(name: str, export: str, output_dir: str, use_home_dir: bool):
     """Get detailed information about a specific fund family."""
-    from app.cli.commands import get_fund_family_details_command
+    from app.cli.commands import get_fund_family_detail
     ctx = click.get_current_context()
     ctx.invoke(
-        get_fund_family_details_command,
-        family_id=family_id,
+        get_fund_family_detail,
+        name=name,
         export=export,
         output_dir=output_dir,
         use_home_dir=use_home_dir

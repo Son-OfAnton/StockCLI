@@ -1833,132 +1833,172 @@ def display_mutual_fund_profile(mutual_fund: Any) -> None:
     # Create panel with all sections
     panel_content = "\n".join(str(line) for line in content)
     panel = Panel(panel_content, title=title, border_style="cyan", expand=False)
-    
     console.print(panel)
 
-def display_fund_families(fund_families: List[Any], limit: Optional[int] = None) -> None:
+def display_fund_families(families: List[Dict[str, Any]], limit: Optional[int] = None) -> None:
     """
     Display a list of fund families in a formatted table.
     
     Args:
-        fund_families: List of FundFamily objects to display
+        families: List of dictionaries with fund family data
         limit: Maximum number of fund families to display
     """
-    if not fund_families:
+    if not families:
         console.print("[yellow]No fund families found.[/yellow]")
         return
-
-    # Apply limit if specified
-    if limit and limit > 0 and len(fund_families) > limit:
-        display_families = fund_families[:limit]
-        console.print(
-            f"[blue]Showing {limit} of {len(fund_families)} fund families.[/blue]")
-    else:
-        display_families = fund_families
-
-    table = Table(
-        title=f"Mutual Fund Families ({len(display_families)} displayed)")
-
-    # Add columns
-    table.add_column("Rank", style="dim", width=6)
-    table.add_column("Fund Family", style="green")
-    table.add_column("Funds", justify="right")
-    table.add_column("Country", style="blue")
     
-    if any(f.aum is not None for f in display_families):
-        table.add_column("AUM", style="cyan", justify="right")
-        
-    if any(f.founded_year is not None for f in display_families):
-        table.add_column("Founded", justify="right")
-        
-    if any(f.headquarters is not None for f in display_families):
-        table.add_column("Headquarters")
-
+    # Process the families data to extract key information
+    processed_families = []
+    for family in families:
+        # Create a standardized structure for each family
+        processed_family = {
+            "name": family.get("name", "Unknown"),
+            "fund_count": family.get("fund_count", 0),
+            "headquarters": family.get("headquarters", "N/A"),
+            "founded": family.get("founded", "N/A"),
+            "aum": family.get("aum", "N/A"),  # Assets Under Management
+            "website": family.get("website", "N/A"),
+            "popular_funds": family.get("popular_funds", [])
+        }
+        processed_families.append(processed_family)
+    
+    # Sort by fund count (if available) then by name
+    processed_families.sort(key=lambda x: (-x["fund_count"] if isinstance(x["fund_count"], int) else 0, x["name"]))
+    
+    # Apply limit if specified
+    if limit and len(processed_families) > limit:
+        display_families = processed_families[:limit]
+        console.print(f"[blue]Showing {limit} of {len(processed_families)} fund families.[/blue]")
+    else:
+        display_families = processed_families
+    
+    # Create table for displaying the families
+    table = Table(title=f"Fund Families ({len(display_families)} displayed)")
+    
+    # Add columns
+    table.add_column("Name", style="cyan")
+    table.add_column("Fund Count", justify="right")
+    table.add_column("Headquarters", style="green")
+    table.add_column("Founded")
+    table.add_column("AUM", style="yellow")
+    table.add_column("Popular Funds")
+    
     # Add rows
-    for i, family in enumerate(display_families, 1):
-        row = [
-            str(i),
-            family.name,
-            str(family.fund_count),
-            family.country or "N/A"
-        ]
+    for family in display_families:
+        # Format popular funds as a comma-separated list (limited to 3)
+        popular_funds = family["popular_funds"]
+        if isinstance(popular_funds, list) and popular_funds:
+            if len(popular_funds) > 3:
+                formatted_funds = ", ".join(popular_funds[:3]) + f" +{len(popular_funds) - 3} more"
+            else:
+                formatted_funds = ", ".join(popular_funds)
+        else:
+            formatted_funds = "N/A"
         
-        if any(f.aum is not None for f in display_families):
-            aum_str = f"${family.aum:,.1f}B" if family.aum is not None else "N/A"
-            row.append(aum_str)
-            
-        if any(f.founded_year is not None for f in display_families):
-            row.append(str(family.founded_year) if family.founded_year else "N/A")
-            
-        if any(f.headquarters is not None for f in display_families):
-            row.append(family.headquarters or "N/A")
-
-        table.add_row(*row)
-
+        # Format AUM (Assets Under Management) with proper units
+        aum = family["aum"]
+        if isinstance(aum, (int, float)):
+            if aum >= 1_000_000_000_000:  # Trillions
+                formatted_aum = f"${aum / 1_000_000_000_000:.2f}T"
+            elif aum >= 1_000_000_000:  # Billions
+                formatted_aum = f"${aum / 1_000_000_000:.2f}B"
+            elif aum >= 1_000_000:  # Millions
+                formatted_aum = f"${aum / 1_000_000:.2f}M"
+            else:
+                formatted_aum = f"${aum:,.0f}"
+        else:
+            formatted_aum = str(aum)
+        
+        # Add the row to the table
+        table.add_row(
+            family["name"],
+            str(family["fund_count"]),
+            str(family["headquarters"]),
+            str(family["founded"]),
+            formatted_aum,
+            formatted_funds
+        )
+    
     console.print(table)
 
 
-def display_fund_family_details(fund_family: Any) -> None:
+def display_fund_family_detail(family: Dict[str, Any]) -> None:
     """
-    Display detailed information for a specific fund family.
+    Display detailed information about a specific fund family.
     
     Args:
-        fund_family: FundFamily object to display
+        family: Dictionary containing fund family data
     """
-    if not fund_family:
-        console.print("[yellow]Fund family not found.[/yellow]")
+    if not family:
+        console.print("[yellow]Fund family information not found.[/yellow]")
         return
-        
-    # Create a panel for the fund family details
-    title = Text(f"Fund Family Profile: {fund_family.name}", style="bold green")
     
+    # Create a panel for the fund family
+    title = Text(f"Fund Family: {family.get('name', 'Unknown')}", style="bold cyan")
+    
+    # Format the panel content
     content = []
     
-    # Basic information section
+    # Basic Information section
     content.append(Text("Basic Information", style="bold underline"))
-    content.append(f"Name: {fund_family.name}")
-    if fund_family.family_id:
-        content.append(f"ID: {fund_family.family_id}")
-    content.append(f"Total Funds: {fund_family.fund_count}")
     
-    if fund_family.country:
-        content.append(f"Country: {fund_family.country}")
-        
-    if fund_family.headquarters:
-        content.append(f"Headquarters: {fund_family.headquarters}")
-        
-    if fund_family.founded_year:
-        content.append(f"Founded: {fund_family.founded_year}")
-        
-    if fund_family.ceo:
-        content.append(f"CEO: {fund_family.ceo}")
-        
-    if fund_family.website:
-        content.append(f"Website: {fund_family.website}")
+    # Add headquarters if available
+    if "headquarters" in family and family["headquarters"]:
+        content.append(f"Headquarters: {family['headquarters']}")
     
-    content.append("")
+    # Add founded date if available
+    if "founded" in family and family["founded"]:
+        content.append(f"Founded: {family['founded']}")
     
-    # Fund information section
-    content.append(Text("Fund Information", style="bold underline"))
+    # Add website if available
+    if "website" in family and family["website"]:
+        website = Text(f"Website: {family['website']}", style="blue underline")
+        content.append(website)
     
-    if fund_family.mutual_fund_count is not None:
-        content.append(f"Mutual Funds: {fund_family.mutual_fund_count}")
+    content.append("")  # Add blank line
+    
+    # Financial Information section
+    content.append(Text("Financial Information", style="bold underline"))
+    
+    # Add AUM if available
+    if "aum" in family and family["aum"]:
+        aum = family["aum"]
+        if isinstance(aum, (int, float)):
+            if aum >= 1_000_000_000_000:  # Trillions
+                formatted_aum = f"${aum / 1_000_000_000_000:.2f} trillion"
+            elif aum >= 1_000_000_000:  # Billions
+                formatted_aum = f"${aum / 1_000_000_000:.2f} billion"
+            elif aum >= 1_000_000:  # Millions
+                formatted_aum = f"${aum / 1_000_000:.2f} million"
+            else:
+                formatted_aum = f"${aum:,.0f}"
+        else:
+            formatted_aum = str(aum)
+        content.append(f"Assets Under Management: {formatted_aum}")
+    
+    # Add fund count if available
+    if "fund_count" in family and family["fund_count"]:
+        content.append(f"Number of Funds: {family['fund_count']:,}")
+    
+    content.append("")  # Add blank line
+    
+    # Popular Funds section
+    popular_funds = family.get("popular_funds", [])
+    if popular_funds:
+        content.append(Text("Popular Funds", style="bold underline"))
+        for fund in popular_funds[:10]:  # Limit to 10 funds to prevent overflow
+            content.append(f"• {fund}")
         
-    if fund_family.etf_count is not None:
-        content.append(f"ETFs: {fund_family.etf_count}")
-        
-    if fund_family.aum is not None:
-        content.append(f"Assets Under Management: ${fund_family.aum:,.2f} billion")
+        if len(popular_funds) > 10:
+            content.append(f"... and {len(popular_funds) - 10} more")
     
-    content.append("")
-    
-    # Description section
-    if fund_family.description:
+    # Add description if available
+    if "description" in family and family["description"]:
+        content.append("")  # Add blank line
         content.append(Text("Description", style="bold underline"))
-        content.append(fund_family.description)
+        content.append(Text(family["description"]))
     
-    # Create panel with all sections
+    # Create and display the panel
     panel_content = "\n".join(str(line) for line in content)
-    panel = Panel(panel_content, title=title, border_style="green", expand=False)
-    
+    panel = Panel(panel_content, title=title, border_style="cyan", expand=False)
     console.print(panel)

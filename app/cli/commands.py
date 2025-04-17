@@ -18,7 +18,7 @@ from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF
 from app.models.stock import Quote
 from app.models.symbol import Symbol
-from app.utils.display import create_progress_spinner, display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_cross_listed_symbols, display_eod_price, display_etfs, display_etfs_detailed, display_fund_families, display_fund_family_details, display_funds_table, display_market_movers, display_mutual_fund_profile, display_mutual_funds_detailed
+from app.utils.display import create_progress_spinner, display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_cross_listed_symbols, display_eod_price, display_etfs, display_etfs_detailed, display_fund_families, display_fund_family_detail, display_funds_table, display_market_movers, display_mutual_fund_profile, display_mutual_funds_detailed
 from app.utils.helpers import (
     display_quotes_table, clear_screen
 )
@@ -3506,53 +3506,42 @@ def get_mutual_fund_profile(symbol, export, output_dir, use_home_dir):
 
 
 @mutual_funds.command(name="families")
-@click.option("--search", "-s", help="Search by name")
-@click.option("--country", "-c", help="Filter by country")
-@click.option("--limit", "-l", type=int, default=25,
-              help="Maximum number of fund families to display (default: 25, 0 for all)")
+@click.option("--search", "-s", help="Search for fund families by name")
+@click.option("--limit", "-l", type=int, default=50, 
+              help="Maximum number of fund families to display (default: 50, 0 for all)")
 @click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
               help="Export results to file format")
 @click.option("--output-dir", type=click.Path(file_okay=False),
               help="Directory to save exported files")
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
-def list_fund_families(search, country, limit, export, output_dir, use_home_dir):
+def list_fund_families(search: str, limit: int, export: str, output_dir: str, use_home_dir: bool):
     """
-    List available mutual fund families/companies.
+    List available fund families with optional filtering.
     
-    A fund family is a company that manages a group of mutual funds, like Vanguard or Fidelity.
-
     Examples:
     \b
-    # List all fund families (limited to 25 by default)
+    # List all fund families (limited to 50 by default)
     stockcli stock mutual-funds families
-
-    # List fund families containing 'Van' in their name
-    stockcli stock mutual-funds families --search Van
-
-    # List up to 10 fund families from a specific country
-    stockcli stock mutual-funds families --country "United States" --limit 10
+    
+    # Search for fund families containing 'Vanguard' in the name
+    stockcli stock mutual-funds families --search Vanguard
+    
+    # List all fund families and export to JSON
+    stockcli stock mutual-funds families --limit 0 --export json
     """
     try:
         with create_progress_spinner("Fetching fund families...") as progress:
             progress.add_task("Loading...", total=None)
             
-            # Get fund families from the API using the dedicated endpoint
-            # The search and country filtering is done by the API
-            families = client.get_fund_families(search=search, country=country)
+            # Get fund families from the API
+            families = client.get_fund_families(search=search)
             
-            # Convert to FundFamily objects
-            from app.models.fund import FundFamily
-            fund_families = [FundFamily.from_api_response(f) for f in families]
-            
-            # The API already sorts by fund count, but we'll ensure consistent ordering here
-            fund_families.sort(key=lambda x: (-x.fund_count, x.name))
-        
         # Display the fund families
-        display_fund_families(fund_families, limit)
+        display_fund_families(families, limit)
         
         # Export if requested
-        if export and fund_families:
+        if export and families:
             export_formats = []
             if export == 'json':
                 export_formats = ['json']
@@ -3571,18 +3560,53 @@ def list_fund_families(search, country, limit, export, output_dir, use_home_dir)
                 export_output_dir = get_default_export_dir()
                 
             # Export the data
-            from app.utils.export import export_items
+            result_paths = {}
             
-            result = export_items(
-                fund_families, 
-                'fund_families', 
-                export_formats, 
-                export_output_dir
-            )
+            # Current timestamp for filename
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
             
-            if result:
+            # Export to JSON
+            if 'json' in export_formats:
+                filename = f"fund_families_{current_time}.json"
+                filepath = export_output_dir / filename
+                
+                try:
+                    ensure_directory(filepath)
+                    with open(filepath, 'w') as f:
+                        json.dump(families, f, indent=2, default=str)
+                    result_paths['json'] = str(filepath)
+                except Exception as e:
+                    logger.error(f"Error exporting to JSON: {e}")
+                    click.echo(f"Error exporting to JSON: {e}", err=True)
+            
+            # Export to CSV
+            if 'csv' in export_formats:
+                filename = f"fund_families_{current_time}.csv"
+                filepath = export_output_dir / filename
+                
+                try:
+                    ensure_directory(filepath)
+                    with open(filepath, 'w', newline='') as f:
+                        if families:
+                            # Define field names, handling nested popular_funds field
+                            fieldnames = ["name", "fund_count", "headquarters", "founded", "aum", "website"]
+                            writer = csv.DictWriter(f, fieldnames=fieldnames)
+                            writer.writeheader()
+                            
+                            # Write rows, flattening the data structure
+                            for family in families:
+                                row = {k: v for k, v in family.items() if k in fieldnames}
+                                writer.writerow(row)
+                                
+                            result_paths['csv'] = str(filepath)
+                except Exception as e:
+                    logger.error(f"Error exporting to CSV: {e}")
+                    click.echo(f"Error exporting to CSV: {e}", err=True)
+            
+            # Display export results
+            if result_paths:
                 click.echo("\nExported fund families to:")
-                for fmt, path in result.items():
+                for fmt, path in result_paths.items():
                     click.echo(f"  {fmt.upper()}: {path}")
                     
     except TwelveDataAPIError as e:
@@ -3592,45 +3616,41 @@ def list_fund_families(search, country, limit, export, output_dir, use_home_dir)
         click.echo(f"Error: {e}", err=True)
 
 
-@mutual_funds.command(name="family-details")
-@click.argument("family_id", required=True)
+@mutual_funds.command(name="family")
+@click.argument("name", required=True)
 @click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
               help="Export results to file format")
 @click.option("--output-dir", type=click.Path(file_okay=False),
               help="Directory to save exported files")
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
-def get_fund_family_details_command(family_id, export, output_dir, use_home_dir):
+def get_fund_family_detail(name: str, export: str, output_dir: str, use_home_dir: bool):
     """
     Get detailed information about a specific fund family.
     
-    FAMILY_ID is the ID or name of the fund family (e.g., Vanguard, Fidelity)
+    NAME is the name of the fund family (e.g., Vanguard, Fidelity)
     
     Examples:
     \b
-    # Get detailed information for Vanguard
-    stockcli stock mutual-funds family-details Vanguard
+    # Get detailed information about Vanguard
+    stockcli stock mutual-funds family Vanguard
     
-    # Export fund family details to JSON
-    stockcli stock mutual-funds family-details Fidelity --export json
+    # Export Fidelity fund family details to JSON
+    stockcli stock mutual-funds family Fidelity --export json
     """
     try:
-        with create_progress_spinner(f"Fetching details for fund family: {family_id}...") as progress:
+        with create_progress_spinner(f"Fetching fund family details for {name}...") as progress:
             progress.add_task("Loading...", total=None)
             
-            # Get fund family details from the API
-            family_data = client.get_fund_family_details(family_id)
+            # Get the fund family detail from the API
+            family_detail = client.get_fund_family_detail(name)
             
-            if not family_data:
-                click.echo(f"No fund family found with ID/name: {family_id}", err=True)
+            if not family_detail:
+                click.echo(f"No fund family found with name: {name}", err=True)
                 return
                 
-            # Convert to FundFamily object
-            from app.models.fund import FundFamily
-            fund_family = FundFamily.from_api_response(family_data)
-            
-        # Display the fund family details
-        display_fund_family_details(fund_family)
+        # Display the fund family detail
+        display_fund_family_detail(family_detail)
         
         # Export if requested
         if export:
@@ -3643,31 +3663,50 @@ def get_fund_family_details_command(family_id, export, output_dir, use_home_dir)
             else:
                 export_output_dir = get_default_export_dir()
                 
-            # Export to requested format
-            result = {}
+            # Current timestamp for filename
+            current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            result_paths = {}
+            
+            # Export to the requested format
             if export == 'json':
-                # Export to JSON
-                filename = f"fund_family_{family_id.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                filename = f"fund_family_{name.replace(' ', '_')}_{current_time}.json"
                 filepath = export_output_dir / filename
                 
-                from app.utils.export import export_to_json
-                if export_to_json(fund_family.to_dict(), filepath):
-                    result['json'] = str(filepath)
+                try:
+                    ensure_directory(filepath)
+                    with open(filepath, 'w') as f:
+                        json.dump(family_detail, f, indent=2, default=str)
+                    result_paths['json'] = str(filepath)
+                except Exception as e:
+                    logger.error(f"Error exporting to JSON: {e}")
+                    click.echo(f"Error exporting to JSON: {e}", err=True)
+                    
             elif export == 'csv':
-                # Export to CSV
-                filename = f"fund_family_{family_id.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                filename = f"fund_family_{name.replace(' ', '_')}_{current_time}.csv"
                 filepath = export_output_dir / filename
                 
-                with open(filepath, 'w', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=fund_family.get_csv_header())
-                    writer.writeheader()
-                    writer.writerow(fund_family.to_csv_row())
-                    result['csv'] = str(filepath)
+                try:
+                    ensure_directory(filepath)
+                    with open(filepath, 'w', newline='') as f:
+                        # Define field names, handling nested structures
+                        fieldnames = ["name", "fund_count", "headquarters", "founded", "aum", "website"]
+                        writer = csv.DictWriter(f, fieldnames=fieldnames)
+                        writer.writeheader()
+                        
+                        # Write the row, flattening the data structure
+                        row = {k: v for k, v in family_detail.items() if k in fieldnames}
+                        writer.writerow(row)
+                            
+                        result_paths['csv'] = str(filepath)
+                except Exception as e:
+                    logger.error(f"Error exporting to CSV: {e}")
+                    click.echo(f"Error exporting to CSV: {e}", err=True)
                     
             # Display export results
-            if result:
-                click.echo("\nExported fund family data to:")
-                for fmt, path in result.items():
+            if result_paths:
+                click.echo("\nExported fund family details to:")
+                for fmt, path in result_paths.items():
                     click.echo(f"  {fmt.upper()}: {path}")
                     
     except TwelveDataAPIError as e:
