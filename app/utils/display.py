@@ -1917,6 +1917,8 @@ def display_fund_family_details(fund_family: Any) -> None:
     # Basic information section
     content.append(Text("Basic Information", style="bold underline"))
     content.append(f"Name: {fund_family.name}")
+    if fund_family.family_id:
+        content.append(f"ID: {fund_family.family_id}")
     content.append(f"Total Funds: {fund_family.fund_count}")
     
     if fund_family.country:
@@ -1927,6 +1929,9 @@ def display_fund_family_details(fund_family: Any) -> None:
         
     if fund_family.founded_year:
         content.append(f"Founded: {fund_family.founded_year}")
+        
+    if fund_family.ceo:
+        content.append(f"CEO: {fund_family.ceo}")
         
     if fund_family.website:
         content.append(f"Website: {fund_family.website}")

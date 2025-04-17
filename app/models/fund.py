@@ -127,6 +127,10 @@ class Fund:
         ]
     
 
+"""
+Data model for fund family information.
+"""
+
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 
@@ -135,6 +139,7 @@ class FundFamily:
     """Model for fund family data (e.g., Vanguard, Fidelity)."""
     name: str
     fund_count: int
+    family_id: Optional[str] = None
     country: Optional[str] = None
     website: Optional[str] = None
     founded_year: Optional[int] = None
@@ -143,21 +148,41 @@ class FundFamily:
     aum: Optional[float] = None  # Assets under management in billions
     etf_count: Optional[int] = None
     mutual_fund_count: Optional[int] = None
+    logo_url: Optional[str] = None
+    ceo: Optional[str] = None
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'FundFamily':
-        """Create a FundFamily instance from a dictionary."""
+    def from_api_response(cls, data: Dict[str, Any]) -> 'FundFamily':
+        """Create a FundFamily instance from TwelveData API response."""
+        # Extract and convert fields from the API response
+        founded_year = None
+        if data.get('founded_year'):
+            try:
+                founded_year = int(data['founded_year'])
+            except (ValueError, TypeError):
+                pass
+                
+        aum = None
+        if data.get('aum'):
+            try:
+                aum = float(data['aum'])
+            except (ValueError, TypeError):
+                pass
+                
         return cls(
             name=data.get('name', ''),
-            fund_count=data.get('fund_count', 0),
+            family_id=data.get('id', data.get('family_id')),
+            fund_count=int(data.get('fund_count', 0)),
             country=data.get('country'),
             website=data.get('website'),
-            founded_year=int(data.get('founded_year')) if data.get('founded_year') else None,
+            founded_year=founded_year,
             description=data.get('description'),
             headquarters=data.get('headquarters'),
-            aum=float(data.get('aum')) if data.get('aum') else None,
-            etf_count=int(data.get('etf_count')) if data.get('etf_count') else None,
-            mutual_fund_count=int(data.get('mutual_fund_count')) if data.get('mutual_fund_count') else None
+            aum=aum,
+            etf_count=int(data.get('etf_count', 0)) if data.get('etf_count') else None,
+            mutual_fund_count=int(data.get('mutual_fund_count', 0)) if data.get('mutual_fund_count') else None,
+            logo_url=data.get('logo_url'),
+            ceo=data.get('ceo')
         )
     
     def to_dict(self) -> Dict[str, Any]:
@@ -168,6 +193,8 @@ class FundFamily:
         }
         
         # Add optional fields if they exist
+        if self.family_id:
+            result['id'] = self.family_id
         if self.country:
             result['country'] = self.country
         if self.website:
@@ -184,6 +211,10 @@ class FundFamily:
             result['etf_count'] = self.etf_count
         if self.mutual_fund_count is not None:
             result['mutual_fund_count'] = self.mutual_fund_count
+        if self.logo_url:
+            result['logo_url'] = self.logo_url
+        if self.ceo:
+            result['ceo'] = self.ceo
             
         return result
     
@@ -192,13 +223,15 @@ class FundFamily:
         result = {
             'name': self.name,
             'fund_count': str(self.fund_count),
+            'id': self.family_id if self.family_id else '',
             'country': self.country if self.country else '',
             'website': self.website if self.website else '',
             'founded_year': str(self.founded_year) if self.founded_year else '',
             'headquarters': self.headquarters if self.headquarters else '',
             'aum': f"${self.aum:,.2f}B" if self.aum is not None else '',
             'etf_count': str(self.etf_count) if self.etf_count is not None else '',
-            'mutual_fund_count': str(self.mutual_fund_count) if self.mutual_fund_count is not None else ''
+            'mutual_fund_count': str(self.mutual_fund_count) if self.mutual_fund_count is not None else '',
+            'ceo': self.ceo if self.ceo else ''
         }
             
         return result
@@ -207,6 +240,6 @@ class FundFamily:
     def get_csv_header() -> List[str]:
         """Get the CSV header for fund family data."""
         return [
-            'name', 'fund_count', 'country', 'website', 'founded_year', 
-            'headquarters', 'aum', 'etf_count', 'mutual_fund_count'
+            'name', 'id', 'fund_count', 'country', 'website', 'founded_year', 
+            'headquarters', 'aum', 'etf_count', 'mutual_fund_count', 'ceo'
         ]

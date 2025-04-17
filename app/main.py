@@ -1271,6 +1271,27 @@ def list_fund_families_shortcut(search, country, limit, export, output_dir, use_
     )
 
 
+@mutual_funds_shortcut.command(name="family-details")
+@click.argument("family_id", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_fund_family_details_shortcut(family_id, export, output_dir, use_home_dir):
+    """Get detailed information about a specific fund family."""
+    from app.cli.commands import get_fund_family_details_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_fund_family_details_command,
+        family_id=family_id,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
 def main():
     """Main entry point for the CLI app."""
     try:

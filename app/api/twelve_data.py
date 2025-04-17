@@ -1475,63 +1475,86 @@ class TwelveDataClient:
         # Return the first matching fund (should be only one)
         return funds_data[0]
 
-    def get_fund_families(self) -> List[Dict[str, Any]]:
+    def get_fund_families(self, 
+                          search: Optional[str] = None,
+                          country: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        Get a list of mutual fund families/companies.
-
+        Get a list of mutual fund families/companies using the dedicated endpoint.
+        
+        Args:
+            search: Optional search term to filter fund families by name
+            country: Optional country filter
+            
         Returns:
             List of dictionaries with fund family data
-
+            
         Raises:
             TwelveDataAPIError: If the API request fails
         """
-        # This endpoint may not directly exist in TwelveData API,
-        # so we'll derive it by analyzing mutual funds
-
-        logger.debug("Fetching mutual fund families")
-
+        endpoint = "/mutual_funds/family"
+        params = {}
+        
+        # Add optional filters
+        if search:
+            params['search'] = search
+        if country:
+            params['country'] = country
+            
+        logger.debug(f"Fetching mutual fund families with params: {params}")
+        
         try:
-            # First, get a list of mutual funds
-            funds = self.get_mutual_funds()
-
-            if not funds:
-                return []
-
-            # Extract and count unique fund families
-            family_counts = {}
-            family_countries = {}
-
-            for fund in funds:
-                family = fund.get('fund_family') or fund.get('issuer')
-                if not family:
-                    continue
-
-                if family not in family_counts:
-                    family_counts[family] = 0
-                    family_countries[family] = fund.get('country', '')
-
-                family_counts[family] += 1
-
-            # Convert to list of fund family objects
-            result = []
-            for family, count in family_counts.items():
-                family_data = {
-                    'name': family,
-                    'fund_count': count,
-                    'country': family_countries.get(family, '')
-                }
-                result.append(family_data)
-
+            response = self._make_request(endpoint, params)
+            
+            # Check if response is in the expected format
+            if not isinstance(response, dict) or "data" not in response:
+                logger.error(f"Unexpected response format for fund families: {response}")
+                raise TwelveDataAPIError("Unexpected response format from fund families endpoint")
+            
+            # Extract and return the data
+            families = response.get("data", [])
+            
             # Sort by fund count (descending) and then name
-            result.sort(key=lambda x: (-x['fund_count'], x['name']))
-
-            return result
-
+            families.sort(key=lambda x: (-x.get('fund_count', 0), x.get('name', '')))
+            
+            return families
+            
         except Exception as e:
             logger.error(f"Error fetching fund families: {e}")
-            raise TwelveDataAPIError(
-                f"Failed to get fund families: {e}") from e
-
+            raise TwelveDataAPIError(f"Failed to get fund families: {e}") from e
+            
+            
+    def get_fund_family_details(self, family_id: str) -> Dict[str, Any]:
+        """
+        Get detailed information about a specific fund family.
+        
+        Args:
+            family_id: The ID or name of the fund family
+            
+        Returns:
+            Dictionary with detailed fund family information
+            
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        endpoint = "/mutual_funds/family"
+        params = {
+            'id': family_id
+        }
+        
+        logger.debug(f"Fetching details for fund family: {family_id}")
+        
+        try:
+            response = self._make_request(endpoint, params)
+            
+            # If the response is a list, take the first item
+            if isinstance(response, list) and len(response) > 0:
+                return response[0]
+                
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error fetching fund family details: {e}")
+            raise TwelveDataAPIError(f"Failed to get fund family details: {e}") from e
 
 # Initialize the TwelveData client
 client = TwelveDataClient()

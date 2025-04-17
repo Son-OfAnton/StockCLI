@@ -18,7 +18,7 @@ from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF
 from app.models.stock import Quote
 from app.models.symbol import Symbol
-from app.utils.display import create_progress_spinner, display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_cross_listed_symbols, display_eod_price, display_etfs, display_etfs_detailed, display_fund_families, display_funds_table, display_market_movers, display_mutual_fund_profile, display_mutual_funds_detailed
+from app.utils.display import create_progress_spinner, display_bonds, display_bonds_detailed, display_commodity_groups, display_commodity_pairs, display_commodity_pairs_detailed, display_cross_listed_symbols, display_eod_price, display_etfs, display_etfs_detailed, display_fund_families, display_fund_family_details, display_funds_table, display_market_movers, display_mutual_fund_profile, display_mutual_funds_detailed
 from app.utils.helpers import (
     display_quotes_table, clear_screen
 )
@@ -3504,6 +3504,7 @@ def get_mutual_fund_profile(symbol, export, output_dir, use_home_dir):
         logger.error(f"Error getting mutual fund profile: {e}", exc_info=True)
         click.echo(f"Error: {e}", err=True)
 
+
 @mutual_funds.command(name="families")
 @click.option("--search", "-s", help="Search by name")
 @click.option("--country", "-c", help="Filter by country")
@@ -3536,21 +3537,16 @@ def list_fund_families(search, country, limit, export, output_dir, use_home_dir)
         with create_progress_spinner("Fetching fund families...") as progress:
             progress.add_task("Loading...", total=None)
             
-            # Get fund families from the API
-            families = client.get_fund_families()
-            
-            # Apply filters
-            if search:
-                search_term = search.lower()
-                families = [f for f in families if search_term in f['name'].lower()]
-                
-            if country:
-                country_term = country.lower()
-                families = [f for f in families if country_term in (f.get('country') or '').lower()]
+            # Get fund families from the API using the dedicated endpoint
+            # The search and country filtering is done by the API
+            families = client.get_fund_families(search=search, country=country)
             
             # Convert to FundFamily objects
             from app.models.fund import FundFamily
-            fund_families = [FundFamily.from_dict(f) for f in families]
+            fund_families = [FundFamily.from_api_response(f) for f in families]
+            
+            # The API already sorts by fund count, but we'll ensure consistent ordering here
+            fund_families.sort(key=lambda x: (-x.fund_count, x.name))
         
         # Display the fund families
         display_fund_families(fund_families, limit)
@@ -3593,4 +3589,89 @@ def list_fund_families(search, country, limit, export, output_dir, use_home_dir)
         click.echo(f"API Error: {e}", err=True)
     except Exception as e:
         logger.error(f"Error listing fund families: {e}", exc_info=True)
+        click.echo(f"Error: {e}", err=True)
+
+
+@mutual_funds.command(name="family-details")
+@click.argument("family_id", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_fund_family_details_command(family_id, export, output_dir, use_home_dir):
+    """
+    Get detailed information about a specific fund family.
+    
+    FAMILY_ID is the ID or name of the fund family (e.g., Vanguard, Fidelity)
+    
+    Examples:
+    \b
+    # Get detailed information for Vanguard
+    stockcli stock mutual-funds family-details Vanguard
+    
+    # Export fund family details to JSON
+    stockcli stock mutual-funds family-details Fidelity --export json
+    """
+    try:
+        with create_progress_spinner(f"Fetching details for fund family: {family_id}...") as progress:
+            progress.add_task("Loading...", total=None)
+            
+            # Get fund family details from the API
+            family_data = client.get_fund_family_details(family_id)
+            
+            if not family_data:
+                click.echo(f"No fund family found with ID/name: {family_id}", err=True)
+                return
+                
+            # Convert to FundFamily object
+            from app.models.fund import FundFamily
+            fund_family = FundFamily.from_api_response(family_data)
+            
+        # Display the fund family details
+        display_fund_family_details(fund_family)
+        
+        # Export if requested
+        if export:
+            # Handle output directory
+            export_output_dir = None
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+                
+            # Export to requested format
+            result = {}
+            if export == 'json':
+                # Export to JSON
+                filename = f"fund_family_{family_id.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                filepath = export_output_dir / filename
+                
+                from app.utils.export import export_to_json
+                if export_to_json(fund_family.to_dict(), filepath):
+                    result['json'] = str(filepath)
+            elif export == 'csv':
+                # Export to CSV
+                filename = f"fund_family_{family_id.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                filepath = export_output_dir / filename
+                
+                with open(filepath, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=fund_family.get_csv_header())
+                    writer.writeheader()
+                    writer.writerow(fund_family.to_csv_row())
+                    result['csv'] = str(filepath)
+                    
+            # Display export results
+            if result:
+                click.echo("\nExported fund family data to:")
+                for fmt, path in result.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+                    
+    except TwelveDataAPIError as e:
+        click.echo(f"API Error: {e}", err=True)
+    except Exception as e:
+        logger.error(f"Error getting fund family details: {e}", exc_info=True)
         click.echo(f"Error: {e}", err=True)
