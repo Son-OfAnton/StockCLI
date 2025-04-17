@@ -6,12 +6,13 @@ StockCLI is a command-line tool for fetching the latest stock exchange and finan
 
 - **Real-time Stock Quotes:** Fetch current quotes for one or more stock symbols.
 - **Auto-Refresh:** Enable live auto-refresh of quotes with configurable intervals.
-- **Export Functionality:** Export fetched quotes, symbols, forex pairs, cryptocurrency, funds, bonds, and commodity data to JSON and/or CSV files.
-- **Multiple Data Categories:** List and filter available symbols, forex pairs, cryptocurrencies, funds (ETFs and mutual funds), bonds, commodity pairs, and exchange details.
-- **Filtering and Searching:** Filter by exchange, country, type, asset class, or search by symbol/name.
-- **Custom Output Directories:** Specify custom export locations or use the user’s home directory.
-- **Rich Terminal Display:** Uses the Rich library for formatted tables, panels, progress spinners, and detailed information.
-- **Stop Auto-Refresh:** Easily stop auto-refresh processes when running.
+- **Export Functionality:** Export fetched quotes, symbols, forex pairs, cryptocurrency and funds information to JSON and/or CSV files.
+- **Multiple Data Categories:** List and filter available symbols, forex pairs, cryptocurrencies, and funds (ETFs and mutual funds).
+- **Bonds Data:** List bonds with detailed information and filtering options.
+- **Commodity Data:** List commodity pairs and groups with their descriptions.
+- **Exchange Details & Trading Hours:** Fetch and display detailed exchange information along with trading schedules.
+- **Custom Output Directories:** Option to specify custom export locations or use the user’s home directory.
+- **Rich Terminal Display:** Uses Rich library to display formatted tables and progress spinners.
 
 ## Installation
 
@@ -38,7 +39,7 @@ StockCLI is a command-line tool for fetching the latest stock exchange and finan
 4. **Configure Environment Variables:**
 
    Copy the example environment file and update it with your API credentials:
-
+   
    ```bash
    cp .env.example .env
    # Then edit .env to set your TWELVEDATA_API_KEY and TWELVEDATA_BASE_URL
@@ -49,7 +50,7 @@ StockCLI is a command-line tool for fetching the latest stock exchange and finan
 After installation, you can explore the available commands:
 
 - **Show Help:**
-
+  
   ```bash
   stockcli --help
   ```
@@ -57,7 +58,7 @@ After installation, you can explore the available commands:
 - **Get Stock Quotes:**
 
   Get a single or multiple stock quotes and optionally enable auto-refresh or export:
-
+  
   ```bash
   stockcli quote AAPL MSFT --refresh --interval 5
   ```
@@ -71,7 +72,7 @@ After installation, you can explore the available commands:
 - **Symbol Information:**
 
   List all available symbols, filter by exchange, type or country:
-
+  
   ```bash
   stockcli symbols list --exchange NASDAQ --detailed
   ```
@@ -79,7 +80,7 @@ After installation, you can explore the available commands:
 - **Forex Data:**
 
   List forex pairs or currencies:
-
+  
   ```bash
   stockcli forex pairs --base USD
   stockcli forex currencies --export json
@@ -88,7 +89,7 @@ After installation, you can explore the available commands:
 - **Cryptocurrency Data:**
 
   List available cryptocurrency pairs and exchanges:
-
+  
   ```bash
   stockcli crypto list --quote USD --detailed
   stockcli crypto exchanges --export csv
@@ -97,23 +98,44 @@ After installation, you can explore the available commands:
 - **Fund Data:**
 
   List ETFs or mutual funds with filtering options:
-
+  
   ```bash
   stockcli funds list --type etf --detailed
   stockcli funds mutual --search Vanguard
   ```
 
+- **Bond Data:**
+
+  List bonds with detailed information:
+  
+  ```bash
+  stockcli bonds list --detailed --export json
+  ```
+
+- **Exchange Details & Trading Hours:**
+
+  Get detailed exchange information and trading hours:
+  
+  ```bash
+  stockcli symbols exchange-details <exchange_code> [--export csv]
+  stockcli exchange-schedule <exchange_code> --detailed
+  ```
+
+- **Commodity Data:**
+
+  List commodity pairs and groups:
+  
+  ```bash
+  stockcli commodities list --detailed
+  ```
+
 - **Stop Auto-Refresh:**
 
   If auto-refresh is running, you can stop it:
-
+  
   ```bash
   stockcli stock stop
   ```
-
-- **Additional Commands:**
-
-  Explore bonds, commodity pairs, and exchange details using the respective command groups.
 
 ## Project Structure
 
