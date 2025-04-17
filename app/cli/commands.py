@@ -2,6 +2,7 @@
 CLI commands for the stock application.
 """
 
+import csv
 import click
 import time
 import threading
@@ -1976,7 +1977,7 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
     from app.utils.display import display_cross_listed_symbols, create_progress_spinner
     from app.utils.export import get_default_export_dir, get_home_export_dir
     from app.models.symbol import Symbol
-    
+
     try:
         click.echo("Fetching cross-listed symbols...")
         with create_progress_spinner("Fetching cross-listed symbols") as progress:
@@ -1998,14 +1999,15 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
                     symbols_list.append(Symbol.from_api_response(item))
                 else:
                     logger.warning(f"Unexpected data format: {item}")
-            
+
             # If we couldn't parse any symbols, keep the raw data for display
             if not symbols_list:
                 raw_data = cross_listed
         except (KeyError, ValueError, TypeError) as e:
-            click.echo(f"Warning: Could not parse all cross-listed symbols: {e}")
+            click.echo(
+                f"Warning: Could not parse all cross-listed symbols: {e}")
             raw_data = cross_listed
-        
+
         # Display the symbols or raw data
         # Display the symbols or raw data
         if symbols_list:
@@ -2037,7 +2039,7 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
 
             # Export the symbols or raw data
             from app.utils.export import export_items
-            
+
             if symbols_list:
                 exported_files = export_items(
                     symbols_list, export_formats, export_dir,
@@ -2048,30 +2050,32 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
                 import json
                 import csv
                 from datetime import datetime
-                
+
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 exported_files = {}
-                
+
                 # Export as JSON
                 if "json" in export_formats:
-                    json_file = export_dir / f"cross_listed_symbols_{timestamp}.json"
+                    json_file = export_dir / \
+                        f"cross_listed_symbols_{timestamp}.json"
                     export_dir.mkdir(parents=True, exist_ok=True)
-                    
+
                     with open(json_file, 'w') as f:
                         json.dump(raw_data, f, indent=2)
-                    
+
                     exported_files["json"] = str(json_file)
-                
+
                 # Export as CSV (if possible)
                 if "csv" in export_formats and isinstance(raw_data, list):
-                    csv_file = export_dir / f"cross_listed_symbols_{timestamp}.csv"
+                    csv_file = export_dir / \
+                        f"cross_listed_symbols_{timestamp}.csv"
                     export_dir.mkdir(parents=True, exist_ok=True)
-                    
+
                     # Try to extract field names from the first item
                     fieldnames = []
                     if raw_data and isinstance(raw_data[0], dict):
                         fieldnames = list(raw_data[0].keys())
-                    
+
                     with open(csv_file, 'w', newline='') as f:
                         if fieldnames:
                             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -2083,7 +2087,7 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
                             writer = csv.writer(f)
                             for item in raw_data:
                                 writer.writerow([item])
-                    
+
                     exported_files["csv"] = str(csv_file)
 
             if exported_files:
@@ -2096,6 +2100,7 @@ def list_cross_listed_symbols(symbol, export, output_dir, use_home_dir):
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
         click.echo(f"An unexpected error occurred: {e}", err=True)
+
 
 @symbols.command(name="exchanges")
 @click.option("--type", "-t", help="Filter by exchange type (e.g., 'stock', 'etf')")
@@ -2110,7 +2115,7 @@ def list_exchanges(type, export, output_dir, use_home_dir):
     from app.utils.display import display_exchanges_table, create_progress_spinner
     from app.utils.export import get_default_export_dir, get_home_export_dir
     from app.models.symbol import Exchange
-    
+
     try:
         # Show a spinner while fetching exchanges
         with create_progress_spinner(description="Fetching exchanges...") as progress:
@@ -2160,13 +2165,13 @@ def list_exchanges(type, export, output_dir, use_home_dir):
 
             # Export the exchanges
             from app.utils.export import export_items
-            
+
             prefix = 'exchanges'
             if type:
                 prefix = f"{type}_exchanges"
-                
+
             export_results = export_items(
-                exchanges, export_formats, export_dir, 
+                exchanges, export_formats, export_dir,
                 filename_prefix=prefix
             )
 
@@ -2180,6 +2185,7 @@ def list_exchanges(type, export, output_dir, use_home_dir):
     except Exception as e:
         logger.exception(f"Unexpected error: {e}")
         click.echo(f"An unexpected error occurred: {e}", err=True)
+
 
 @symbols.command(name="exchange-schedule")
 @click.argument("code", required=True)
@@ -2195,7 +2201,7 @@ def get_exchange_schedule(code, date, export, output_dir, use_home_dir):
     from app.utils.display import display_exchange_schedule, create_progress_spinner
     from app.utils.export import get_default_export_dir, get_home_export_dir
     from app.models.exchange_details import ExchangeSchedule
-    
+
     try:
         # Show a spinner while fetching data
         with create_progress_spinner(description=f"Fetching schedule for {code}...") as progress:
@@ -2231,13 +2237,13 @@ def get_exchange_schedule(code, date, export, output_dir, use_home_dir):
 
             # Export the exchange schedule
             from app.utils.export import export_items
-            
+
             filename_prefix = f"exchange_schedule_{code.lower()}"
             if date:
                 filename_prefix += f"_{date}"
-                
+
             export_results = export_items(
-                [exchange_schedule], export_formats, export_dir, 
+                [exchange_schedule], export_formats, export_dir,
                 filename_prefix=filename_prefix
             )
 
@@ -2297,3 +2303,801 @@ def get_exchange_trading_hours_alias(code, date, export, output_dir, use_home_di
         output_dir=output_dir,
         use_home_dir=use_home_dir
     )
+
+
+@symbols.command(name="all-trading-hours")
+@click.option("--type", "-t", help="Filter by exchange type (e.g., 'stock', 'etf')")
+@click.option("--limit", "-l", type=int, help="Limit the number of exchanges to fetch")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_exchanges_with_hours(type, limit, export, output_dir, use_home_dir):
+    """
+    List all available exchanges with their opening and closing times.
+
+    This command fetches all exchanges and their trading hours information.
+
+    Examples:
+    \b
+    # List all exchanges with their trading hours
+    stockcli symbols all-trading-hours
+
+    # List stock exchanges with their trading hours
+    stockcli symbols all-trading-hours --type stock
+
+    # List a limited number of exchanges (for testing)
+    stockcli symbols all-trading-hours --limit 10
+
+    # Export results to JSON
+    stockcli symbols all-trading-hours --export json
+    """
+    from app.utils.display import display_exchanges_with_hours_table, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir
+    from app.models.exchange_details import ExchangeSchedule
+    from pathlib import Path
+
+    try:
+        # Show a spinner while fetching data
+        with create_progress_spinner(description="Fetching all exchanges with trading hours...") as progress:
+            task_id = progress.add_task("Downloading...", total=None)
+
+            # Fetch exchanges with trading hours
+            exchanges_data = client.get_all_exchanges_with_hours(
+                limit=limit, exchange_type=type)
+
+            progress.update(task_id, completed=True)
+
+        # Convert API response to ExchangeSchedule objects
+        exchange_schedules = []
+        for data in exchanges_data:
+            try:
+                schedule = ExchangeSchedule.from_api_response(data)
+                exchange_schedules.append(schedule)
+            except (KeyError, ValueError) as e:
+                logger.warning(f"Could not parse exchange schedule data: {e}")
+
+        # Display the exchanges with trading hours
+        display_exchanges_with_hours_table(exchange_schedules)
+
+        # Export if requested
+        # if export:
+        #     export_formats = []
+        #     if export == 'json':
+        #         export_formats = ['json']
+        #     elif export == 'csv':
+        #         export_formats = ['csv']
+        #     else:  # both
+        #         export_formats = ['json', 'csv']
+
+        #     # Determine output directory
+        #     if output_dir:
+        #         export_dir = Path(output_dir).expanduser().resolve()
+        #     elif use_home_dir:
+        #         export_dir = get_home_export_dir()
+        #     else:
+        #         export_dir = get_default_export_dir()
+
+        #     # Export the exchange schedules
+        #     filename_prefix = "exchanges_with_hours"
+        #     if type:
+        #         filename_prefix += f"_{type.lower()}"
+
+        #     export_results = export_items(
+        #         exchange_schedules, export_formats, export_dir,
+        #         filename_prefix=filename_prefix
+        #     )
+
+        #     if export_results:
+        #         click.echo("\nExported exchanges with trading hours to:")
+        #         for fmt, path in export_results.items():
+        #             click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(
+            f"Unexpected error fetching exchanges with trading hours: {e}")
+        click.echo(f"Unexpected error: {e}", err=True)
+
+
+@symbols.command(name="instrument-types")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_instrument_types(export, output_dir, use_home_dir):
+    """
+    List available instrument types from the TwelveData API.
+
+    Instrument types are categories of financial instruments that can be used
+    for filtering in other API endpoints.
+
+    Examples:
+    \b
+    # List all instrument types
+    stockcli symbols instrument-types
+
+    # Export instrument types to JSON
+    stockcli symbols instrument-types --export json
+    """
+    from app.utils.display import display_instrument_types_table, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir
+    from pathlib import Path
+
+    try:
+        # Show a spinner while fetching data
+        with create_progress_spinner(description="Fetching instrument types...") as progress:
+            task_id = progress.add_task("Downloading...", total=None)
+
+            # Fetch instrument types
+            instrument_types = client.get_instrument_types()
+
+            progress.update(task_id, completed=True)
+
+        # Display the instrument types
+        display_instrument_types_table(instrument_types)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            else:  # both
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_dir = get_home_export_dir()
+            else:
+                export_dir = get_default_export_dir()
+
+            # Create a list of dictionaries for export
+            export_data = []
+            for instrument_type in instrument_types:
+                if isinstance(instrument_type, dict):
+                    export_data.append({
+                        'id': instrument_type.get('id', ''),
+                        'name': instrument_type.get('name', '')
+                    })
+                else:
+                    # Handle string format for backwards compatibility
+                    export_data.append({
+                        'id': instrument_type,
+                        'name': instrument_type.capitalize()
+                    })
+
+            # Export the instrument types
+            from app.utils.export import export_to_json, export_to_csv
+            export_results = {}
+
+            filename_prefix = "instrument_types"
+            if 'json' in export_formats:
+                json_path = export_dir / f"{filename_prefix}.json"
+                export_to_json(export_data, json_path)
+                export_results['json'] = json_path
+
+            if 'csv' in export_formats:
+                csv_path = export_dir / f"{filename_prefix}.csv"
+                with open(csv_path, 'w', newline='') as csvfile:
+                    writer = csv.DictWriter(csvfile, fieldnames=['id', 'name'])
+                    writer.writeheader()
+                    writer.writerows(export_data)
+                export_results['csv'] = csv_path
+
+            if export_results:
+                click.echo("\nExported instrument types to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching instrument types: {e}")
+        click.echo(f"Unexpected error: {e}", err=True)
+
+
+@stock.command(name="earliest-data")
+@click.argument("symbol", required=True)
+@click.option("--interval", "-i", default="1day",
+              help="Time interval (e.g., '1min', '5min', '1h', '1day', '1week', '1month')")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_earliest_data(symbol, interval, export, output_dir, use_home_dir):
+    """
+    Get the first available datetime for a given instrument at a specific interval.
+
+    This command helps determine the historical data range available for a specific
+    symbol and interval in the TwelveData API.
+
+    Examples:
+    \b
+    # Get earliest available data for Apple stock with daily interval
+    stockcli stock earliest-data AAPL --interval 1day
+
+    # Get earliest available data for Bitcoin with hourly interval
+    stockcli stock earliest-data BTC/USD --interval 1h
+
+    # Get earliest data and export to JSON
+    stockcli stock earliest-data AAPL --interval 1day --export json
+    """
+    from app.utils.display import display_earliest_data_info, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir
+    from pathlib import Path
+
+    try:
+        # Show a spinner while fetching data
+        with create_progress_spinner(description=f"Fetching earliest data for {symbol}...") as progress:
+            task_id = progress.add_task("Downloading...", total=None)
+
+            # Fetch earliest available timestamp
+            earliest_data = client.get_earliest_timestamp(symbol, interval)
+
+            progress.update(task_id, completed=True)
+
+        # Display the earliest data information
+        display_earliest_data_info(earliest_data)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            else:  # both
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_dir = get_home_export_dir()
+            else:
+                export_dir = get_default_export_dir()
+
+            # Export the earliest data info
+            from app.utils.export import export_to_json, export_to_csv
+
+            # Create a clean export object with the relevant data
+            export_data = {
+                'symbol': symbol,
+                'interval': interval,
+                'earliest_datetime': earliest_data.get('earliest_datetime'),
+                'first_data_point': earliest_data.get('data', {})
+            }
+
+            export_results = {}
+            filename_prefix = f"earliest_data_{symbol.replace('/', '_')}_{interval}"
+
+            # Export to JSON if requested
+            if 'json' in export_formats:
+                json_path = export_dir / f"{filename_prefix}.json"
+                export_to_json(export_data, json_path)
+                export_results['json'] = json_path
+
+            # Export to CSV if requested
+            if 'csv' in export_formats:
+                csv_path = export_dir / f"{filename_prefix}.csv"
+
+                # Create a flattened representation for CSV
+                flat_data = {
+                    'symbol': symbol,
+                    'interval': interval,
+                    'earliest_datetime': earliest_data.get('earliest_datetime', 'N/A')
+                }
+
+                # Add the first data point fields if available
+                if 'data' in earliest_data and earliest_data['data']:
+                    for key, value in earliest_data['data'].items():
+                        flat_data[f"data_{key}"] = value
+
+                # Write to CSV
+                with open(csv_path, 'w', newline='') as csvfile:
+                    # Determine the fieldnames
+                    fieldnames = list(flat_data.keys())
+
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+                    writer.writerow(flat_data)
+
+                export_results['csv'] = csv_path
+
+            if export_results:
+                click.echo("\nExported earliest data info to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching earliest data: {e}")
+        click.echo(f"Unexpected error: {e}", err=True)
+
+
+@symbols.command(name="search")
+@click.argument("query", required=True)
+@click.option("--limit", "-l", type=int, default=10,
+              help="Maximum number of results to display (default: 10)")
+@click.option("--type", "-t", multiple=True,
+              help="Filter by instrument type(s) (can specify multiple)")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def search_symbols(query, limit, type, exchange, country, export, output_dir, use_home_dir):
+    """
+    Search for symbols matching a query.
+
+    Examples:
+    \b
+    # Search for Apple
+    stockcli symbols search "Apple"
+
+    # Search for Bitcoin with limit of 5 results
+    stockcli symbols search "Bitcoin" --limit 5
+
+    # Search for stocks on NASDAQ
+    stockcli symbols search "tech" --type stock --exchange NASDAQ
+
+    # Search for ETFs and export results
+    stockcli symbols search "S&P" --type etf --export json
+    """
+    from app.utils.display import display_symbol_search_results, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir
+    from pathlib import Path
+
+    try:
+        # Process instrument types filter
+        instrument_types = list(type) if type else None
+
+        # Show a spinner while fetching data
+        with create_progress_spinner(description=f"Searching for '{query}'...") as progress:
+            task_id = progress.add_task("Searching...", total=None)
+
+            # Search for symbols
+            symbols = client.search_symbols(
+                query=query,
+                outputsize=limit,
+                instrument_types=instrument_types,
+                exchange=exchange,
+                country=country
+            )
+
+            progress.update(task_id, completed=True)
+
+        # Display the search results
+        display_symbol_search_results(symbols, query)
+
+        # Export if requested
+        if export and symbols:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            else:  # both
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_dir = get_home_export_dir()
+            else:
+                export_dir = get_default_export_dir()
+
+            # Export the search results
+            from app.utils.export import export_to_json, export_to_csv
+
+            export_results = {}
+            filename_query = query.replace(' ', '_').replace('/', '_')[:30]
+            filename_prefix = f"symbol_search_{filename_query}"
+
+            # Export to JSON if requested
+            if 'json' in export_formats:
+                json_path = export_dir / f"{filename_prefix}.json"
+                export_to_json(symbols, json_path)
+                export_results['json'] = json_path
+
+            # Export to CSV if requested
+            if 'csv' in export_formats:
+                csv_path = export_dir / f"{filename_prefix}.csv"
+
+                with open(csv_path, 'w', newline='') as csvfile:
+                    # Define the fieldnames
+                    fieldnames = ['symbol', 'instrument_name',
+                                  'type', 'exchange', 'country', 'currency']
+
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+
+                    # Write each symbol data
+                    for symbol in symbols:
+                        writer.writerow({
+                            'symbol': symbol.get('symbol', ''),
+                            'instrument_name': symbol.get('instrument_name', symbol.get('name', '')),
+                            'type': symbol.get('type', ''),
+                            'exchange': symbol.get('exchange', ''),
+                            'country': symbol.get('country', ''),
+                            'currency': symbol.get('currency', '')
+                        })
+
+                export_results['csv'] = csv_path
+
+            if export_results:
+                click.echo("\nExported search results to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error searching symbols: {e}")
+        click.echo(f"Unexpected error: {e}", err=True)
+
+
+@stock.command(name="time-series")
+@click.argument("symbol", required=True)
+@click.option("--interval", "-i", default="1day",
+              help="Time interval (e.g., '1min', '5min', '1h', '1day', '1week', '1month')")
+@click.option("--outputsize", "-n", type=int, default=30,
+              help="Number of data points to fetch (default: 30, max: 5000)")
+@click.option("--start-date", "-s",
+              help="Start date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format")
+@click.option("--end-date", "-e",
+              help="End date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format")
+@click.option("--order", "-o", type=click.Choice(['asc', 'desc'], case_sensitive=False),
+              default='desc', help="Order of results ('asc' for oldest first, 'desc' for newest first)")
+@click.option("--include-ext", is_flag=True,
+              help="Include extended hours data (pre/post market) for stocks")
+@click.option("--limit", "-l", type=int, default=10,
+              help="Maximum number of data points to display (default: 10, 0 for all)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_time_series(symbol, interval, outputsize, start_date, end_date, order, include_ext,
+                    limit, export, output_dir, use_home_dir):
+    """
+    Fetch meta and time series data for the requested instrument.
+
+    This command will fetch historical price data for the specified symbol
+    using the 'time_series' endpoint of the TwelveData API.
+
+    Examples:
+    \b
+    # Get daily time series for Apple stock (last 30 days by default)
+    stockcli stock time-series AAPL --interval 1day
+
+    # Get hourly data for Bitcoin with 100 data points
+    stockcli stock time-series BTC/USD --interval 1h --outputsize 100
+
+    # Get data for a specific date range
+    stockcli stock time-series MSFT --start-date 2023-01-01 --end-date 2023-01-31
+
+    # Display more data points in the terminal
+    stockcli stock time-series AAPL --limit 20
+
+    # Export the time series data to CSV
+    stockcli stock time-series AAPL --export csv
+    """
+    from app.utils.display import display_time_series_response, create_progress_spinner
+    from app.utils.export import export_to_json, export_time_series_to_csv, get_default_export_dir, get_home_export_dir
+    from app.models.stock import TimeSeries
+    from pathlib import Path
+
+    try:
+        # Determine display limit
+        display_limit = None if limit == 0 else limit
+
+        # Show a spinner while fetching data
+        with create_progress_spinner(description=f"Fetching time series for {symbol}...") as progress:
+            task_id = progress.add_task("Downloading...", total=None)
+
+            # Fetch time series data
+            response = client.get_time_series(
+                symbol=symbol,
+                interval=interval,
+                outputsize=outputsize,
+                start_date=start_date,
+                end_date=end_date,
+                order=order,
+                include_ext_premarket=include_ext
+            )
+
+            progress.update(task_id, completed=True)
+
+        # Display the time series data
+        display_time_series_response(response, display_limit)
+
+        # Export if requested
+        if export:
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            else:  # both
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_dir = get_home_export_dir()
+            else:
+                export_dir = get_default_export_dir()
+
+            # Create TimeSeries object for export
+            time_series = TimeSeries.from_api_response(response)
+
+            # Generate filename with symbol and interval
+            clean_symbol = symbol.replace('/', '_')
+            date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+            filename_prefix = f"time_series_{clean_symbol}_{interval}_{date_str}"
+
+            export_results = {}
+
+            if 'json' in export_formats:
+                json_path = export_dir / f"{filename_prefix}.json"
+                export_to_json(response, json_path)
+                export_results['json'] = json_path
+
+            if 'csv' in export_formats:
+                csv_path = export_dir / f"{filename_prefix}.csv"
+                export_time_series_to_csv(time_series, csv_path)
+                export_results['csv'] = csv_path
+
+            if export_results:
+                click.echo("\nExported time series data to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching time series: {e}")
+        click.echo(f"Unexpected error: {e}", err=True)
+
+
+@stock.group()
+def forex():
+    """Commands for exploring forex data."""
+    pass
+
+
+@forex.command(name="rate")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(["json", "csv", "both"], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_exchange_rate(symbol, export, output_dir, use_home_dir):
+    """
+    Get real-time exchange rate for a currency pair.
+
+    This command fetches the current exchange rate for the specified forex pair
+    using the TwelveData API.
+
+    SYMBOL should be in the format BASE/QUOTE (e.g., EUR/USD, GBP/JPY).
+
+    Examples:
+    \b
+    # Get the exchange rate for EUR/USD
+    stockcli stock forex rate EUR/USD
+
+    # Get the exchange rate for GBP/JPY and export to JSON
+    stockcli stock forex rate GBP/JPY --export json
+    """
+    from app.utils.display import display_forex_rate, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir, export_to_json
+    from app.models.forex import ForexRate
+    from pathlib import Path
+    from datetime import datetime
+    import csv
+
+    try:
+        # Show a spinner while fetching data
+        with create_progress_spinner(description=f"Fetching exchange rate for {symbol}...") as progress:
+            task_id = progress.add_task("Downloading...", total=None)
+            # Fetch exchange rate
+            response = client.get_exchange_rate(symbol)
+            progress.update(task_id, completed=True)
+
+        # Create ForexRate object
+        forex_rate = ForexRate.from_api_response(response)
+
+        # Display the forex rate
+        display_forex_rate(forex_rate)
+
+        # Export if requested
+        if export:
+            if export == "json":
+                export_formats = ["json"]
+            elif export == "csv":
+                export_formats = ["csv"]
+            else:  # both
+                export_formats = ["json", "csv"]
+
+            # Determine output directory
+            if output_dir:
+                export_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_dir = get_home_export_dir()
+            else:
+                export_dir = get_default_export_dir()
+
+            # Generate filename with symbol
+            clean_symbol = symbol.replace("/", "_")
+            date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename_prefix = f"forex_rate_{clean_symbol}_{date_str}"
+
+            export_results = {}
+
+            # Export to JSON if requested
+            if "json" in export_formats:
+                json_path = export_dir / f"{filename_prefix}.json"
+                export_to_json(forex_rate.to_dict(), json_path)
+                export_results["json"] = json_path
+
+            # Export to CSV if requested
+            if "csv" in export_formats:
+                csv_path = export_dir / f"{filename_prefix}.csv"
+                # Write CSV data
+                with open(csv_path, "w", newline="") as csvfile:
+                    writer = csv.DictWriter(csvfile, fieldnames=ForexRate.get_csv_header())
+                    writer.writeheader()
+                    writer.writerow(forex_rate.to_csv_row())
+                export_results["csv"] = csv_path
+
+            if export_results:
+                click.echo("\nExported exchange rate to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching exchange rate: {e}")
+        click.echo(f"Unexpected error: {e}", err=True)
+
+@stock.command(name="latest-quote")
+@click.argument("symbol", required=True)
+@click.option("--refresh", "-r", is_flag=True, help="Enable auto-refresh")
+@click.option("--interval", "-i", default=10, help="Refresh interval in seconds (default: 10)")
+@click.option("--simple", "-s", is_flag=True, help="Show simplified view (less detail)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_latest_quote(symbol, refresh, interval, simple, export, output_dir, use_home_dir):
+    """
+    Get the latest quote for a specific instrument.
+    
+    This command fetches the most current pricing data for a specified financial instrument
+    and displays detailed information, including price, changes, volume, and 52-week highs/lows.
+    
+    Examples:
+    \b
+    # Get latest quote for Apple stock
+    stockcli stock latest-quote AAPL
+    
+    # Get latest quote for Bitcoin/USD with auto-refresh every 5 seconds
+    stockcli stock latest-quote BTC/USD --refresh --interval 5
+    
+    # Get simplified view of the latest quote
+    stockcli stock latest-quote AAPL --simple
+    
+    # Export the latest quote to JSON
+    stockcli stock latest-quote AAPL --export json
+    """
+    from app.utils.display import display_detailed_quote, create_progress_spinner
+    from app.utils.export import get_default_export_dir, get_home_export_dir
+    from app.models.stock import Quote
+    from pathlib import Path
+    import time
+    
+    # Convert symbol to uppercase (except for crypto pairs that use slashes)
+    if '/' not in symbol:
+        symbol = symbol.upper()
+    
+    # Process export format
+    export_formats = []
+    if export == 'json':
+        export_formats = ['json']
+    elif export == 'csv':
+        export_formats = ['csv']
+    elif export == 'both':
+        export_formats = ['json', 'csv']
+    
+    # Handle output directory
+    export_output_dir = None
+    if output_dir:
+        # If a custom output directory is provided, use it
+        export_output_dir = Path(output_dir).expanduser().resolve()
+        logger.debug(f"Using custom export directory: {export_output_dir}")
+    elif use_home_dir:
+        # If --use-home-dir flag is set, use home directory
+        export_output_dir = get_home_export_dir()
+        logger.debug(f"Using home directory for exports: {export_output_dir}")
+    else:
+        # Otherwise, use the default (project) directory
+        export_output_dir = get_default_export_dir()
+        logger.debug(f"Using default project export directory: {export_output_dir}")
+    
+    # If refresh is enabled, set up auto-refresh loop
+    if refresh:
+        click.echo(f"Auto-refreshing quote for {symbol} every {interval} seconds. Press Ctrl+C to stop.")
+        try:
+            while True:
+                fetch_and_display_single_quote(symbol, simple, export_formats, export_output_dir)
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            click.echo("\nAuto-refresh stopped.")
+    else:
+        # Just fetch once
+        fetch_and_display_single_quote(symbol, simple, export_formats, export_output_dir)
+
+
+def fetch_and_display_single_quote(symbol, simple=False, export_formats=None, output_dir=None):
+    """Helper function to fetch and display a single quote with detailed view."""
+    from app.utils.display import display_detailed_quote, create_progress_spinner
+    from app.utils.export import export_quotes
+    from app.models.stock import Quote
+    
+    try:
+        # Show a spinner while fetching data
+        with create_progress_spinner(description=f"Fetching quote for {symbol}...") as progress:
+            task_id = progress.add_task("Downloading...", total=None)
+            
+            # Fetch the quote
+            quote_data = client.get_quote(symbol)
+            
+            progress.update(task_id, completed=True)
+        
+        # Convert API response to Quote object
+        quote = Quote.from_api_response(quote_data)
+        
+        # Display the quote with detailed view
+        display_detailed_quote(quote, simplified=simple)
+        
+        # Export if requested
+        if export_formats and output_dir:
+            export_results = export_quotes([quote], export_formats, output_dir)
+            
+            if export_results:
+                click.echo("\nExported quote to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+                    
+        # Return the quote for potential further processing
+        return quote
+        
+    except TwelveDataAPIError as e:
+        click.echo(f"Error: {e}", err=True)
+    except Exception as e:
+        logger.exception(f"Unexpected error fetching latest quote: {e}")
+        click.echo(f"Unexpected error: {e}", err=True)

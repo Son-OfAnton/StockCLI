@@ -942,38 +942,369 @@ class TwelveDataClient:
         logger.warning(
             f"Unexpected response format for exchanges: {response_data}")
         return response_data
-    
+
     def get_exchange_schedule(self, code: str, date: str = None) -> Dict[str, Any]:
         """
         Fetch exchange schedule, including details and trading hours.
-        
+
         Args:
             code: Exchange code (e.g., 'NASDAQ', 'NYSE')
             date: Optional date to get trading hours for a specific date (YYYY-MM-DD format)
-            
+
         Returns:
             Dictionary containing exchange schedule information including details and trading hours
-            
+
         Raises:
             TwelveDataAPIError: If the API request fails
         """
         endpoint = "exchange_schedule"
         params = {'code': code}
-        
+
         if date:
             params['date'] = date
-        
+
         logger.debug(f"Fetching exchange schedule for: {code}, date: {date}")
-        
+
         response_data = self._make_request(endpoint, params)
-        
+
         # Check if response is in the expected format
         if isinstance(response_data, dict) and response_data.get("status") == "error":
             message = response_data.get("message", "Unknown error")
             logger.error(f"API Error: {message}")
             raise TwelveDataAPIError(f"API Error: {message}")
-        
+
         return response_data
+
+    def get_all_exchanges_with_hours(self, limit: int = None, exchange_type: str = None) -> List[Dict[str, Any]]:
+        """
+        Fetch all exchanges with their trading hours.
+
+        This method will first fetch the list of exchanges, then get the schedule for each exchange.
+
+        Args:
+            limit: Optional limit to the number of exchanges to fetch (for testing/development)
+            exchange_type: Optional exchange type filter (e.g., 'stock', 'etf')
+
+        Returns:
+            List of dictionaries containing exchange data with trading hours
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        logger.debug(
+            f"Fetching all exchanges with trading hours (limit={limit}, type={exchange_type})")
+
+        # First, fetch all exchanges
+        if exchange_type:
+            exchanges = self.get_exchanges_by_type(exchange_type)
+        else:
+            exchanges = self.get_exchanges()
+
+        # Apply limit if specified
+        if limit and limit > 0:
+            exchanges = exchanges[:limit]
+
+        # For each exchange, get its schedule
+        result = []
+        for idx, exchange in enumerate(exchanges):
+            exchange_code = exchange.get('code', '')
+            if not exchange_code:
+                logger.warning(
+                    f"Exchange at index {idx} has no 'code' field, skipping")
+                continue
+
+            logger.debug(
+                f"Fetching schedule for exchange {exchange_code} ({idx+1}/{len(exchanges)})")
+            try:
+                schedule = self.get_exchange_schedule(exchange_code)
+                # Combine the exchange data with its schedule
+                result.append(schedule)
+            except TwelveDataAPIError as e:
+                logger.warning(
+                    f"Could not fetch schedule for exchange {exchange_code}: {e}")
+                # Include the exchange without schedule data
+                result.append(exchange)
+
+        return result
+
+    def get_instrument_types(self) -> List[Dict[str, Any]]:
+        """
+        Fetch instrument types from the TwelveData API.
+
+        This method fetches the list of available instrument types that can be
+        used for filtering in other API endpoints.
+
+        Returns:
+            List of instrument types with their details
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        endpoint = "instrument_types"
+        logger.debug("Fetching instrument types")
+
+        try:
+            response = self._make_request(endpoint)
+
+            # Check if data is in the expected format
+            if not isinstance(response, dict) or 'data' not in response:
+                logger.error(
+                    f"Unexpected response format for instrument types: {response}")
+                raise TwelveDataAPIError(
+                    "Unexpected response format for instrument types endpoint")
+
+            return response['data']
+        except Exception as e:
+            logger.error(f"Error fetching instrument types: {e}")
+            # If the endpoint doesn't exist or there's another issue,
+            # fall back to a hardcoded list of common instrument types
+            logger.warning("Falling back to hardcoded instrument types list")
+            return [
+                {"id": "stock", "name": "Stock"},
+                {"id": "etf", "name": "ETF"},
+                {"id": "index", "name": "Index"},
+                {"id": "forex", "name": "Forex"},
+                {"id": "crypto", "name": "Cryptocurrency"},
+                {"id": "mutual_fund", "name": "Mutual Fund"},
+                {"id": "reit", "name": "Real Estate Investment Trust (REIT)"},
+                {"id": "bond", "name": "Bond"},
+                {"id": "commodity", "name": "Commodity"}
+            ]
+
+    def get_earliest_timestamp(self, symbol: str, interval: str) -> Dict[str, Any]:
+        """
+        Fetch the earliest available datetime for a given symbol and interval.
+
+        This method queries the time_series endpoint with a very early start_date
+        to find the first available data point for the specified symbol and interval.
+
+        Args:
+            symbol: The symbol to query (e.g., 'AAPL', 'BTC/USD')
+            interval: Time interval (e.g., '1day', '1h', '5min')
+
+        Returns:
+            Dictionary containing the earliest available data information
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        logger.debug(
+            f"Fetching earliest available timestamp for {symbol} at {interval} interval")
+
+        # Use a very early start date to get the earliest available data
+        # Most financial data won't go back further than 1970
+        early_start_date = "1970-01-01"
+
+        # Request just one data point (the earliest one)
+        params = {
+            'symbol': symbol,
+            'interval': interval,
+            'start_date': early_start_date,
+            'outputsize': 1  # We only need the first data point
+        }
+
+        endpoint = "/time_series"
+
+        try:
+            # Make the API request
+            response = self._make_request(endpoint, params)
+
+            # Check if we got valid data
+            if 'values' not in response or not response['values']:
+                logger.warning(
+                    f"No historical data found for {symbol} at {interval} interval")
+                return {
+                    'symbol': symbol,
+                    'interval': interval,
+                    'earliest_datetime': None,
+                    'message': "No historical data available"
+                }
+
+            # Extract the earliest datetime from the response
+            earliest_data = response['values'][0]
+            earliest_datetime = earliest_data.get('datetime')
+
+            return {
+                'symbol': symbol,
+                'interval': interval,
+                'earliest_datetime': earliest_datetime,
+                'data': earliest_data
+            }
+
+        except TwelveDataAPIError as e:
+            logger.error(
+                f"API error fetching earliest timestamp for {symbol}: {e}")
+            raise
+        except Exception as e:
+            logger.error(
+                f"Unexpected error fetching earliest timestamp for {symbol}: {e}")
+            raise TwelveDataAPIError(
+                f"Error fetching earliest timestamp: {str(e)}")
+
+    def search_symbols(self, query: str, outputsize: int = 10,
+                       instrument_types: Optional[List[str]] = None,
+                       exchange: Optional[str] = None,
+                       country: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Search for symbols using a query string.
+
+        Args:
+            query: The search query string
+            outputsize: Maximum number of results to return (default: 10)
+            instrument_types: Optional list of instrument types to filter by
+            exchange: Optional exchange code to filter by
+            country: Optional country name to filter by
+
+        Returns:
+            List of matching symbols with their details
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        endpoint = "/symbol_search"
+        params = {
+            'symbol': query,
+            'outputsize': outputsize
+        }
+
+        # Add optional filters if provided
+        if instrument_types:
+            params['type'] = ','.join(instrument_types)
+        if exchange:
+            params['exchange'] = exchange
+        if country:
+            params['country'] = country
+
+        logger.debug(
+            f"Searching symbols with query: {query}, params: {params}")
+
+        try:
+            response = self._make_request(endpoint, params)
+
+            # Check if the response contains the data
+            if not isinstance(response, dict) or 'data' not in response:
+                logger.error(
+                    f"Unexpected response format for symbol search: {response}")
+                raise TwelveDataAPIError(
+                    "Unexpected response format for symbol search endpoint")
+
+            # Return the list of matching symbols
+            return response['data']
+
+        except TwelveDataAPIError:
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error searching symbols: {e}")
+            raise TwelveDataAPIError(f"Error searching symbols: {str(e)}")
+
+    def get_time_series(self, symbol: str, interval: str, outputsize: int = 30,
+                        start_date: Optional[str] = None, end_date: Optional[str] = None,
+                        order: str = "desc", include_ext_premarket: bool = False) -> Dict[str, Any]:
+        """
+        Fetch historical time series data from the TwelveData API.
+
+        Args:
+            symbol: The symbol to query (e.g., "AAPL", "BTC/USD")
+            interval: Time interval (e.g., "1min", "5min", "1h", "1day", "1week", "1month")
+            outputsize: Number of data points to return (default: 30, max: 5000)
+            start_date: Optional start date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format
+            end_date: Optional end date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format
+            order: Order of results ("asc" or "desc" for oldest first or newest first)
+            include_ext_premarket: Whether to include extended hours data for stocks
+
+        Returns:
+            Dictionary containing meta information and time series values
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        logger.debug(
+            f"Fetching time series for {symbol} at {interval} interval")
+
+        endpoint = "/time_series"
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "outputsize": outputsize,
+        }
+
+        # Add optional parameters
+        if start_date:
+            params["start_date"] = start_date
+        if end_date:
+            params["end_date"] = end_date
+        if order and order.lower() in ["asc", "desc"]:
+            params["order"] = order.lower()
+        if include_ext_premarket:
+            params["dp"] = "true"  # Include extended hours data
+
+        try:
+            response = self._make_request(endpoint, params)
+
+            # Validate response to ensure it has the expected structure
+            if "meta" not in response or "values" not in response:
+                logger.error(
+                    f"Unexpected response structure for time series: {response}")
+                if "status" in response and "message" in response:
+                    raise TwelveDataAPIError(response["message"])
+                raise TwelveDataAPIError(
+                    "Unexpected response structure from time series endpoint")
+
+            # Return both meta and values data
+            return response
+
+        except TwelveDataAPIError as e:
+            logger.error(f"API error fetching time series for {symbol}: {e}")
+            raise
+        except Exception as e:
+            logger.error(
+                f"Unexpected error fetching time series for {symbol}: {e}")
+            raise TwelveDataAPIError(f"Error fetching time series: {str(e)}")
+
+
+    def get_exchange_rate(self, symbol: str) -> Dict[str, Any]:
+        """
+        Fetch real-time exchange rate for a currency pair from the TwelveData API.
+
+        Args:
+            symbol: The forex pair symbol (e.g., 'EUR/USD', 'GBP/JPY')
+
+        Returns:
+            Dictionary containing exchange rate information
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        logger.debug(f"Fetching exchange rate for {symbol}")
+
+        endpoint = "/exchange_rate"
+        params = {'symbol': symbol}
+
+        try:
+            response = self._make_request(endpoint, params)
+
+            # The exchange_rate endpoint doesn't return any meta/values structure,
+            # but directly returns the exchange rate data
+
+            # Make sure the response contains a rate
+            if 'rate' not in response:
+                logger.error(
+                    f"Unexpected response structure for exchange rate: {response}")
+                if 'status' in response and response.get('status') == 'error':
+                    raise TwelveDataAPIError(response.get(
+                        'message', 'Unknown error in exchange rate endpoint'))
+                raise TwelveDataAPIError(
+                    "Unexpected response structure from exchange rate endpoint")
+
+            return response
+
+        except TwelveDataAPIError as e:
+            logger.error(f"API error fetching exchange rate for {symbol}: {e}")
+            raise
+        except Exception as e:
+            logger.error(
+                f"Unexpected error fetching exchange rate for {symbol}: {e}")
+            raise TwelveDataAPIError(f"Error fetching exchange rate: {str(e)}")
 
 
 # Initialize the TwelveData client

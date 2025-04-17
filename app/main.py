@@ -897,6 +897,223 @@ def trading_hours_shortcut(exchange, export, output_dir, use_home_dir):
     )
 
 
+@symbols_shortcut.command(name="all-trading-hours")
+@click.option("--type", "-t", help="Filter by exchange type (e.g., 'stock', 'etf')")
+@click.option("--limit", "-l", type=int, help="Limit the number of exchanges to fetch")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def exchanges_with_hours_shortcut(type, limit, export, output_dir, use_home_dir):
+    """List all exchanges with their opening and closing times."""
+    from app.cli.commands import list_exchanges_with_hours
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_exchanges_with_hours,
+        type=type,
+        limit=limit,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@symbols_shortcut.command(name="instrument-types")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def instrument_types_shortcut(export, output_dir, use_home_dir):
+    """List available instrument types from the TwelveData API."""
+    from app.cli.commands import list_instrument_types
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_instrument_types,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.command(name="earliest-data")
+@click.argument("symbol", required=True)
+@click.option("--interval", "-i", default="1day",
+              help="Time interval (e.g., '1min', '5min', '1h', '1day', '1week', '1month')")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def earliest_data_shortcut(symbol, interval, export, output_dir, use_home_dir):
+    """Get the first available datetime for a given instrument at a specific interval."""
+    from app.cli.commands import get_earliest_data
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_earliest_data,
+        symbol=symbol,
+        interval=interval,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@symbols_shortcut.command(name="search")
+@click.argument("query", required=True)
+@click.option("--limit", "-l", type=int, default=10,
+              help="Maximum number of results to display (default: 10)")
+@click.option("--type", "-t", multiple=True,
+              help="Filter by instrument type(s) (can specify multiple)")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def symbol_search_shortcut(query, limit, type, exchange, country, export, output_dir, use_home_dir):
+    """Search for symbols matching a query string."""
+    from app.cli.commands import search_symbols
+    ctx = click.get_current_context()
+    ctx.invoke(
+        search_symbols,
+        query=query,
+        limit=limit,
+        type=type,
+        exchange=exchange,
+        country=country,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.command(name="search")
+@click.argument("query", required=True)
+@click.option("--limit", "-l", type=int, default=10,
+              help="Maximum number of results to display (default: 10)")
+@click.option("--type", "-t", multiple=True,
+              help="Filter by instrument type(s) (can specify multiple)")
+@click.option("--exchange", "-e", help="Filter by exchange")
+@click.option("--country", "-c", help="Filter by country")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def search_shortcut(query, limit, type, exchange, country, export, output_dir, use_home_dir):
+    """Quick search for symbols matching a query string."""
+    from app.cli.commands import search_symbols
+    ctx = click.get_current_context()
+    ctx.invoke(
+        search_symbols,
+        query=query,
+        limit=limit,
+        type=type,
+        exchange=exchange,
+        country=country,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.command(name="time-series")
+@click.argument("symbol", required=True)
+@click.option("--interval", "-i", default="1day",
+              help="Time interval (e.g., '1min', '5min', '1h', '1day', '1week', '1month')")
+@click.option("--outputsize", "-n", type=int, default=30,
+              help="Number of data points to fetch (default: 30, max: 5000)")
+@click.option("--start-date", "-s",
+              help="Start date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format")
+@click.option("--end-date", "-e",
+              help="End date in YYYY-MM-DD or YYYY-MM-DD HH:MM:SS format")
+@click.option("--order", "-o", type=click.Choice(['asc', 'desc'], case_sensitive=False),
+              default='desc', help="Order of results ('asc' for oldest first, 'desc' for newest first)")
+@click.option("--include-ext", is_flag=True,
+              help="Include extended hours data (pre/post market) for stocks")
+@click.option("--limit", "-l", type=int, default=10,
+              help="Maximum number of data points to display (default: 10, 0 for all)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def time_series_shortcut(symbol, interval, outputsize, start_date, end_date, order, include_ext,
+                         limit, export, output_dir, use_home_dir):
+    """Fetch meta and time series data for a requested instrument."""
+    from app.cli.commands import get_time_series
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_time_series,
+        symbol=symbol,
+        interval=interval,
+        outputsize=outputsize,
+        start_date=start_date,
+        end_date=end_date,
+        order=order,
+        include_ext=include_ext,
+        limit=limit,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+@forex_shortcut.command(name="rate")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def exchange_rate_shortcut(symbol, export, output_dir, use_home_dir):
+    """Get real-time exchange rate for a currency pair."""
+    from app.cli.commands import get_exchange_rate
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_exchange_rate,
+        symbol=symbol,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+@cli.command(name="latest-quote")
+@click.argument("symbol", required=True)
+@click.option("--refresh", "-r", is_flag=True, help="Enable auto-refresh")
+@click.option("--interval", "-i", default=10, help="Refresh interval in seconds (default: 10)")
+@click.option("--simple", "-s", is_flag=True, help="Show simplified view (less detail)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def latest_quote_shortcut(symbol, refresh, interval, simple, export, output_dir, use_home_dir):
+    """Get the latest quote for a specific instrument."""
+    from app.cli.commands import get_latest_quote
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_latest_quote,
+        symbol=symbol,
+        refresh=refresh,
+        interval=interval,
+        simple=simple,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
 def main():
     """Main entry point for the CLI app."""
     try:
