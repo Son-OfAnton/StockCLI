@@ -1592,6 +1592,271 @@ class TwelveDataClient:
             raise TwelveDataAPIError(
                 f"Failed to fetch fund family detail: {e}") from e
 
+    def get_mutual_fund_types(self) -> List[Dict[str, Any]]:
+        """
+        Fetch the available mutual fund types from the TwelveData API.
+
+        Returns:
+            List of dictionaries containing mutual fund type information
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        logger.debug("Fetching mutual fund types")
+
+        # TwelveData may not have a dedicated endpoint for fund types, so we need to
+        # extract this information from mutual funds data
+        try:
+            # Get a sample of mutual funds to extract types
+            mutual_funds = self.get_mutual_funds()
+
+            # Extract and compile fund type information
+            fund_types = {}
+
+            for fund in mutual_funds:
+                # Extract category/type information
+                category = fund.get('fund_category')
+                if not category:
+                    continue
+
+                if category not in fund_types:
+                    # Add a new fund type
+                    fund_types[category] = {
+                        "name": category,
+                        "count": 1,
+                        "description": "",  # TwelveData may not provide this
+                        "example_funds": [fund.get('name', 'Unknown')],
+                        "risk_level": self._estimate_risk_level(category)
+                    }
+                else:
+                    # Update existing fund type
+                    fund_types[category]["count"] += 1
+                    if len(fund_types[category]["example_funds"]) < 5:
+                        fund_types[category]["example_funds"].append(
+                            fund.get('name', 'Unknown'))
+
+            # Convert to list and sort by name
+            result = list(fund_types.values())
+            result.sort(key=lambda x: x["name"])
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error fetching mutual fund types: {e}")
+            raise TwelveDataAPIError(
+                f"Failed to fetch mutual fund types: {e}") from e
+
+    def _estimate_risk_level(self, category: str) -> str:
+        """
+        Estimate risk level based on fund category name.
+
+        Args:
+            category: Fund category/type name
+
+        Returns:
+            Estimated risk level (Low, Medium, High)
+        """
+        # This is a simplified estimation based on common category names
+        category_lower = category.lower()
+
+        # Conservative/low risk categories
+        if any(term in category_lower for term in [
+            'money market', 'short-term bond', 'treasury', 'government bond',
+            'municipal', 'inflation', 'stable value', 'conservative'
+        ]):
+            return "Low"
+
+        # High risk categories
+        if any(term in category_lower for term in [
+            'small cap', 'emerging market', 'international small cap',
+            'sector', 'commodity', 'precious metal', 'aggressive growth',
+            'leveraged', 'alternative', 'frontier market', 'high yield'
+        ]):
+            return "High"
+
+        # Everything else is medium risk
+        return "Medium"
+
+    def get_mutual_fund_type_detail(self, type_name: str) -> Dict[str, Any]:
+        """
+        Fetch detailed information about a specific mutual fund type.
+
+        Args:
+            type_name: The name of the fund type/category
+
+        Returns:
+            Dictionary containing detailed fund type information
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        logger.debug(f"Fetching details for mutual fund type: {type_name}")
+
+        try:
+            # Get all mutual funds
+            mutual_funds = self.get_mutual_funds()
+
+            # Find funds matching the specified type
+            matching_funds = [
+                fund for fund in mutual_funds
+                if fund.get('fund_category', '').lower() == type_name.lower()
+            ]
+
+            if not matching_funds:
+                logger.warning(f"No funds found for type: {type_name}")
+                return {}
+
+            # Analyze funds to extract useful information
+            top_families = {}
+            example_symbols = []
+
+            for fund in matching_funds:
+                # Track fund families
+                family = fund.get('fund_family', 'Unknown')
+                if family in top_families:
+                    top_families[family] += 1
+                else:
+                    top_families[family] = 1
+
+                # Collect example symbols
+                if len(example_symbols) < 10 and 'symbol' in fund:
+                    example_symbols.append(fund.get('symbol'))
+
+            # Sort families by fund count
+            sorted_families = sorted(
+                top_families.items(), key=lambda x: x[1], reverse=True)
+            top_families_list = [{"name": name, "count": count}
+                                 for name, count in sorted_families[:10]]
+
+            # Create the detailed type information
+            type_detail = {
+                "name": type_name,
+                "count": len(matching_funds),
+                "description": self._get_type_description(type_name),
+                "risk_level": self._estimate_risk_level(type_name),
+                "top_families": top_families_list,
+                "example_funds": [fund.get('name', 'Unknown') for fund in matching_funds[:10]],
+                "example_symbols": example_symbols
+            }
+
+            return type_detail
+
+        except Exception as e:
+            logger.error(f"Error fetching fund type detail: {e}")
+            raise TwelveDataAPIError(
+                f"Failed to fetch fund type detail: {e}") from e
+
+    def _get_type_description(self, type_name: str) -> str:
+        """
+        Return a description for the fund type.
+
+        Args:
+            type_name: Fund type/category name
+
+        Returns:
+            Description of the fund type
+        """
+        # This is a simplified function that returns pre-defined descriptions
+        # for common fund types. In a real implementation, this data would come
+        # from the API or a more comprehensive database.
+        type_lower = type_name.lower()
+
+        descriptions = {
+            "large cap": "Funds that invest primarily in stocks of large companies, typically with market capitalizations over $10 billion.",
+            "mid cap": "Funds that invest primarily in stocks of mid-sized companies, typically with market capitalizations between $2 billion and $10 billion.",
+            "small cap": "Funds that invest primarily in stocks of smaller companies, typically with market capitalizations under $2 billion.",
+            "international": "Funds that invest primarily in stocks of companies outside the investor's home country.",
+            "emerging market": "Funds that invest primarily in stocks of companies in developing economies.",
+            "growth": "Funds that focus on companies expected to grow earnings at an above-average rate compared to other companies.",
+            "value": "Funds that focus on stocks that appear to be undervalued compared to the company's intrinsic value.",
+            "blend": "Funds that invest in both growth and value stocks.",
+            "index": "Funds that aim to replicate the performance of a specific index, such as the S&P 500.",
+            "sector": "Funds that focus investments in a particular industry or sector of the economy.",
+            "bond": "Funds that invest primarily in bonds and other debt securities.",
+            "money market": "Funds that invest in short-term, high-quality debt securities.",
+            "balanced": "Funds that invest in both stocks and bonds, typically in a fixed ratio.",
+            "target date": "Funds that automatically adjust their asset allocation to become more conservative as they approach their target date.",
+            "income": "Funds that focus on generating income through dividends and interest rather than capital appreciation.",
+            "tax-exempt": "Funds that invest in securities that provide income exempt from federal or state income taxes.",
+            "alternative": "Funds that invest in non-traditional assets or use non-traditional investment strategies."
+        }
+
+        # Try to find an exact match
+        for key, description in descriptions.items():
+            if key == type_lower:
+                return description
+
+        # Try to find a partial match
+        for key, description in descriptions.items():
+            if key in type_lower:
+                return description
+
+        # Default description if no match is found
+        return f"Mutual funds categorized as {type_name}."
+
+    def get_company_profile(self, symbol: str) -> Dict[str, Any]:
+        """
+        Fetch company profile information.
+
+        Args:
+            symbol: The ticker symbol (e.g., 'AAPL', 'MSFT')
+
+        Returns:
+            Dictionary containing company profile data
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        logger.debug(f"Fetching company profile for {symbol}")
+
+        # TwelveData has a profile endpoint
+        endpoint = "/profile"
+        params = {
+            'symbol': symbol
+        }
+
+        try:
+            profile_data = self._make_request(endpoint, params)
+
+            # Enhance the profile with additional information from other endpoints
+            # if we need more details in the future
+
+            return profile_data
+
+        except Exception as e:
+            logger.error(f"Error fetching company profile for {symbol}: {e}")
+            raise TwelveDataAPIError(
+                f"Failed to fetch company profile: {e}") from e
+
+    def get_company_logo(self, symbol: str) -> str:
+        """
+        Fetch company logo URL.
+
+        Args:
+            symbol: The ticker symbol (e.g., 'AAPL', 'MSFT')
+
+        Returns:
+            URL to the company logo
+
+        Raises:
+            TwelveDataAPIError: If the API request fails
+        """
+        logger.debug(f"Fetching company logo for {symbol}")
+
+        # TwelveData might not have a dedicated logo endpoint, so we're
+        # simulating this with a function that uses a placeholder URL
+        # In a real implementation, this would connect to the actual API
+
+        try:
+            # This is a placeholder. In a real implementation,
+            # we would fetch the actual logo URL from the API.
+            # For now, we'll use a common logo service as an example.
+            return f"https://logo.clearbit.com/{symbol.lower()}.com"
+        except Exception as e:
+            logger.error(f"Error fetching company logo for {symbol}: {e}")
+            # Return a default placeholder if we can't get the logo
+            return "https://placehold.co/400"
+
 
 # Initialize the TwelveData client
 client = TwelveDataClient()

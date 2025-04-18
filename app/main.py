@@ -1290,6 +1290,76 @@ def get_fund_family_detail_shortcut(name: str, export: str, output_dir: str, use
     )
 
 
+@mutual_funds_shortcut.command(name="types")
+@click.option("--limit", "-l", type=int, default=0,
+              help="Maximum number of fund types to display (default: 0 = all)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_mutual_fund_types_shortcut(limit: int, export: str, output_dir: str, use_home_dir: bool):
+    """List available mutual fund types."""
+    from app.cli.commands import list_mutual_fund_types
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_mutual_fund_types,
+        limit=limit,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@mutual_funds_shortcut.command(name="type")
+@click.argument("name", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_mutual_fund_type_detail_shortcut(name: str, export: str, output_dir: str, use_home_dir: bool):
+    """Get detailed information about a specific mutual fund type."""
+    from app.cli.commands import get_mutual_fund_type_detail
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_mutual_fund_type_detail,
+        name=name,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.group(name="company")
+def company_shortcut():
+    """Shortcut for 'stock company' commands."""
+    pass
+
+
+@company_shortcut.command(name="profile")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv'], case_sensitive=False),
+              help="Export company profile to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_company_profile_shortcut(symbol: str, export: str, output_dir: str, use_home_dir: bool):
+    """Get detailed profile information for a company."""
+    from app.cli.commands import get_company_profile
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_company_profile,
+        symbol=symbol,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
 def main():
     """Main entry point for the CLI app."""
     try:

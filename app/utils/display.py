@@ -1644,10 +1644,11 @@ def display_eod_price(eod_data: Dict[str, Any], symbol: str) -> None:
     panel = Panel("\n".join(content), title=title, border_style="cyan")
     console.print(panel)
 
+
 def display_market_movers(movers: List[Dict[str, Any]], direction: str) -> None:
     """
     Display a list of market movers (gainers or losers) in a formatted table.
-    
+
     Args:
         movers: List of dictionaries with market mover data
         direction: "gainers" for top gainers, "losers" for top losers
@@ -1655,11 +1656,11 @@ def display_market_movers(movers: List[Dict[str, Any]], direction: str) -> None:
     if not movers:
         console.print(f"[yellow]No {direction} found for today.[/yellow]")
         return
-        
+
     # Create an appropriate title
     title = f"Top {direction.title()} for Today ({len(movers)} stocks)"
     table = Table(title=title)
-    
+
     # Add columns
     table.add_column("Rank", style="dim")
     table.add_column("Symbol", style="cyan")
@@ -1669,26 +1670,26 @@ def display_market_movers(movers: List[Dict[str, Any]], direction: str) -> None:
     table.add_column("% Change")
     table.add_column("Volume")
     table.add_column("Exchange")
-    
+
     # Add rows
     for i, mover in enumerate(movers, 1):
         # Determine color based on change direction
         change_value = mover.get("change", 0)
         percent_change = mover.get("percent_change", 0)
         color = "green" if change_value >= 0 else "red"
-        
+
         # Format values
         price = f"${mover.get('price', 0):.2f}"
         change = f"[{color}]{change_value:+.2f}[/{color}]"
         percent = f"[{color}]{percent_change:+.2f}%[/{color}]"
-        
+
         # Format volume with commas
         volume = mover.get("volume")
         if volume:
             volume_str = f"{volume:,}"
         else:
             volume_str = "N/A"
-            
+
         # Add row to table
         table.add_row(
             str(i),
@@ -1700,13 +1701,14 @@ def display_market_movers(movers: List[Dict[str, Any]], direction: str) -> None:
             volume_str,
             mover.get("exchange", "")
         )
-        
+
     console.print(table)
+
 
 def display_mutual_funds_detailed(mutual_funds: List[Any], limit: Optional[int] = None) -> None:
     """
     Display a detailed list of mutual funds in a formatted table.
-    
+
     Args:
         mutual_funds: List of MutualFund objects to display
         limit: Maximum number of funds to display
@@ -1742,19 +1744,19 @@ def display_mutual_funds_detailed(mutual_funds: List[Any], limit: Optional[int] 
     for fund in display_funds:
         # Format expense ratio
         expense_ratio = f"{fund.expense_ratio:.2f}%" if fund.expense_ratio is not None else "N/A"
-        
+
         # Format yield
         fund_yield = f"{fund.yield_percentage:.2f}%" if fund.yield_percentage is not None else "N/A"
-        
+
         # Format rating as stars
         rating = "★" * fund.morningstar_rating if fund.morningstar_rating else "N/A"
-        
+
         # Format min investment with comma separator
         min_investment = f"${fund.minimum_investment:,.0f}" if fund.minimum_investment is not None else "N/A"
-        
+
         # Format total assets
         assets = f"${fund.total_assets:,.1f}M" if fund.total_assets is not None else "N/A"
-        
+
         table.add_row(
             fund.symbol,
             fund.name,
@@ -1773,19 +1775,20 @@ def display_mutual_funds_detailed(mutual_funds: List[Any], limit: Optional[int] 
 def display_mutual_fund_profile(mutual_fund: Any) -> None:
     """
     Display detailed profile for a single mutual fund.
-    
+
     Args:
         mutual_fund: MutualFund object to display
     """
     if not mutual_fund:
         console.print("[yellow]Mutual fund not found.[/yellow]")
         return
-        
+
     # Create a panel for the mutual fund profile
-    title = Text(f"Mutual Fund Profile: {mutual_fund.symbol}", style="bold cyan")
-    
+    title = Text(
+        f"Mutual Fund Profile: {mutual_fund.symbol}", style="bold cyan")
+
     content = []
-    
+
     # Basic information section
     content.append(Text("Basic Information", style="bold underline"))
     content.append(f"Name: {mutual_fund.name}")
@@ -1795,19 +1798,23 @@ def display_mutual_fund_profile(mutual_fund: Any) -> None:
     content.append(f"Category: {mutual_fund.fund_category or 'N/A'}")
     content.append(f"Asset Class: {mutual_fund.asset_class or 'N/A'}")
     if mutual_fund.inception_date:
-        content.append(f"Inception Date: {mutual_fund.inception_date.strftime('%Y-%m-%d')}")
+        content.append(
+            f"Inception Date: {mutual_fund.inception_date.strftime('%Y-%m-%d')}")
     content.append("")
-    
+
     # Financial information section
     content.append(Text("Financial Information", style="bold underline"))
     if mutual_fund.total_assets is not None:
-        content.append(f"Total Assets: ${mutual_fund.total_assets:,.1f} million")
+        content.append(
+            f"Total Assets: ${mutual_fund.total_assets:,.1f} million")
     if mutual_fund.expense_ratio is not None:
         content.append(f"Expense Ratio: {mutual_fund.expense_ratio:.2f}%")
     if mutual_fund.net_expense_ratio is not None:
-        content.append(f"Net Expense Ratio: {mutual_fund.net_expense_ratio:.2f}%")
+        content.append(
+            f"Net Expense Ratio: {mutual_fund.net_expense_ratio:.2f}%")
     if mutual_fund.gross_expense_ratio is not None:
-        content.append(f"Gross Expense Ratio: {mutual_fund.gross_expense_ratio:.2f}%")
+        content.append(
+            f"Gross Expense Ratio: {mutual_fund.gross_expense_ratio:.2f}%")
     if mutual_fund.management_fee is not None:
         content.append(f"Management Fee: {mutual_fund.management_fee:.2f}%")
     if mutual_fund.yield_percentage is not None:
@@ -1815,30 +1822,34 @@ def display_mutual_fund_profile(mutual_fund: Any) -> None:
     if mutual_fund.turnover_ratio is not None:
         content.append(f"Turnover Ratio: {mutual_fund.turnover_ratio:.2f}%")
     content.append("")
-    
+
     # Investment details
     content.append(Text("Investment Details", style="bold underline"))
     if mutual_fund.minimum_investment is not None:
-        content.append(f"Minimum Investment: ${mutual_fund.minimum_investment:,.2f}")
+        content.append(
+            f"Minimum Investment: ${mutual_fund.minimum_investment:,.2f}")
     if mutual_fund.morningstar_rating:
         stars = "★" * mutual_fund.morningstar_rating
-        content.append(f"Morningstar Rating: {stars} ({mutual_fund.morningstar_rating}/5)")
+        content.append(
+            f"Morningstar Rating: {stars} ({mutual_fund.morningstar_rating}/5)")
     content.append("")
-    
+
     # Investment objective
     if mutual_fund.investment_objective:
         content.append(Text("Investment Objective", style="bold underline"))
         content.append(mutual_fund.investment_objective)
-    
+
     # Create panel with all sections
     panel_content = "\n".join(str(line) for line in content)
-    panel = Panel(panel_content, title=title, border_style="cyan", expand=False)
+    panel = Panel(panel_content, title=title,
+                  border_style="cyan", expand=False)
     console.print(panel)
+
 
 def display_fund_families(families: List[Dict[str, Any]], limit: Optional[int] = None) -> None:
     """
     Display a list of fund families in a formatted table.
-    
+
     Args:
         families: List of dictionaries with fund family data
         limit: Maximum number of fund families to display
@@ -1846,7 +1857,7 @@ def display_fund_families(families: List[Dict[str, Any]], limit: Optional[int] =
     if not families:
         console.print("[yellow]No fund families found.[/yellow]")
         return
-    
+
     # Process the families data to extract key information
     processed_families = []
     for family in families:
@@ -1861,20 +1872,22 @@ def display_fund_families(families: List[Dict[str, Any]], limit: Optional[int] =
             "popular_funds": family.get("popular_funds", [])
         }
         processed_families.append(processed_family)
-    
+
     # Sort by fund count (if available) then by name
-    processed_families.sort(key=lambda x: (-x["fund_count"] if isinstance(x["fund_count"], int) else 0, x["name"]))
-    
+    processed_families.sort(
+        key=lambda x: (-x["fund_count"] if isinstance(x["fund_count"], int) else 0, x["name"]))
+
     # Apply limit if specified
     if limit and len(processed_families) > limit:
         display_families = processed_families[:limit]
-        console.print(f"[blue]Showing {limit} of {len(processed_families)} fund families.[/blue]")
+        console.print(
+            f"[blue]Showing {limit} of {len(processed_families)} fund families.[/blue]")
     else:
         display_families = processed_families
-    
+
     # Create table for displaying the families
     table = Table(title=f"Fund Families ({len(display_families)} displayed)")
-    
+
     # Add columns
     table.add_column("Name", style="cyan")
     table.add_column("Fund Count", justify="right")
@@ -1882,19 +1895,20 @@ def display_fund_families(families: List[Dict[str, Any]], limit: Optional[int] =
     table.add_column("Founded")
     table.add_column("AUM", style="yellow")
     table.add_column("Popular Funds")
-    
+
     # Add rows
     for family in display_families:
         # Format popular funds as a comma-separated list (limited to 3)
         popular_funds = family["popular_funds"]
         if isinstance(popular_funds, list) and popular_funds:
             if len(popular_funds) > 3:
-                formatted_funds = ", ".join(popular_funds[:3]) + f" +{len(popular_funds) - 3} more"
+                formatted_funds = ", ".join(
+                    popular_funds[:3]) + f" +{len(popular_funds) - 3} more"
             else:
                 formatted_funds = ", ".join(popular_funds)
         else:
             formatted_funds = "N/A"
-        
+
         # Format AUM (Assets Under Management) with proper units
         aum = family["aum"]
         if isinstance(aum, (int, float)):
@@ -1908,7 +1922,7 @@ def display_fund_families(families: List[Dict[str, Any]], limit: Optional[int] =
                 formatted_aum = f"${aum:,.0f}"
         else:
             formatted_aum = str(aum)
-        
+
         # Add the row to the table
         table.add_row(
             family["name"],
@@ -1918,48 +1932,49 @@ def display_fund_families(families: List[Dict[str, Any]], limit: Optional[int] =
             formatted_aum,
             formatted_funds
         )
-    
+
     console.print(table)
 
 
 def display_fund_family_detail(family: Dict[str, Any]) -> None:
     """
     Display detailed information about a specific fund family.
-    
+
     Args:
         family: Dictionary containing fund family data
     """
     if not family:
         console.print("[yellow]Fund family information not found.[/yellow]")
         return
-    
+
     # Create a panel for the fund family
-    title = Text(f"Fund Family: {family.get('name', 'Unknown')}", style="bold cyan")
-    
+    title = Text(
+        f"Fund Family: {family.get('name', 'Unknown')}", style="bold cyan")
+
     # Format the panel content
     content = []
-    
+
     # Basic Information section
     content.append(Text("Basic Information", style="bold underline"))
-    
+
     # Add headquarters if available
     if "headquarters" in family and family["headquarters"]:
         content.append(f"Headquarters: {family['headquarters']}")
-    
+
     # Add founded date if available
     if "founded" in family and family["founded"]:
         content.append(f"Founded: {family['founded']}")
-    
+
     # Add website if available
     if "website" in family and family["website"]:
         website = Text(f"Website: {family['website']}", style="blue underline")
         content.append(website)
-    
+
     content.append("")  # Add blank line
-    
+
     # Financial Information section
     content.append(Text("Financial Information", style="bold underline"))
-    
+
     # Add AUM if available
     if "aum" in family and family["aum"]:
         aum = family["aum"]
@@ -1975,30 +1990,352 @@ def display_fund_family_detail(family: Dict[str, Any]) -> None:
         else:
             formatted_aum = str(aum)
         content.append(f"Assets Under Management: {formatted_aum}")
-    
+
     # Add fund count if available
     if "fund_count" in family and family["fund_count"]:
         content.append(f"Number of Funds: {family['fund_count']:,}")
-    
+
     content.append("")  # Add blank line
-    
+
     # Popular Funds section
     popular_funds = family.get("popular_funds", [])
     if popular_funds:
         content.append(Text("Popular Funds", style="bold underline"))
         for fund in popular_funds[:10]:  # Limit to 10 funds to prevent overflow
             content.append(f"• {fund}")
-        
+
         if len(popular_funds) > 10:
             content.append(f"... and {len(popular_funds) - 10} more")
-    
+
     # Add description if available
     if "description" in family and family["description"]:
         content.append("")  # Add blank line
         content.append(Text("Description", style="bold underline"))
         content.append(Text(family["description"]))
-    
+
     # Create and display the panel
     panel_content = "\n".join(str(line) for line in content)
-    panel = Panel(panel_content, title=title, border_style="cyan", expand=False)
+    panel = Panel(panel_content, title=title,
+                  border_style="cyan", expand=False)
     console.print(panel)
+
+
+def display_mutual_fund_types(fund_types: List[Dict[str, Any]], limit: Optional[int] = None) -> None:
+    """
+    Display a list of mutual fund types in a formatted table.
+
+    Args:
+        fund_types: List of dictionaries with mutual fund type data
+        limit: Maximum number of fund types to display
+    """
+    if not fund_types:
+        console.print("[yellow]No mutual fund types found.[/yellow]")
+        return
+
+    # Apply limit if specified
+    if limit and limit > 0 and len(fund_types) > limit:
+        display_types = fund_types[:limit]
+        console.print(
+            f"[blue]Showing {limit} of {len(fund_types)} fund types.[/blue]")
+    else:
+        display_types = fund_types
+
+    # Create table for displaying the fund types
+    table = Table(title=f"Mutual Fund Types ({len(display_types)} displayed)")
+
+    # Add columns
+    table.add_column("Type", style="cyan")
+    table.add_column("Count", justify="right", style="magenta")
+    table.add_column("Risk Level", style="yellow")
+    table.add_column("Example Funds")
+
+    # Add rows
+    for fund_type in display_types:
+        # Format risk level with color coding
+        risk_level = fund_type.get("risk_level", "Medium")
+        if risk_level == "Low":
+            risk_level_formatted = "[green]Low[/green]"
+        elif risk_level == "Medium":
+            risk_level_formatted = "[yellow]Medium[/yellow]"
+        else:  # High
+            risk_level_formatted = "[red]High[/red]"
+
+        # Format example funds as a comma-separated list (limited to 3)
+        example_funds = fund_type.get("example_funds", [])
+        if example_funds:
+            if len(example_funds) > 3:
+                formatted_funds = ", ".join(
+                    example_funds[:3]) + f" +{len(example_funds) - 3} more"
+            else:
+                formatted_funds = ", ".join(example_funds)
+        else:
+            formatted_funds = "N/A"
+
+        # Add the row to the table
+        table.add_row(
+            fund_type.get("name", "Unknown"),
+            str(fund_type.get("count", 0)),
+            risk_level_formatted,
+            formatted_funds
+        )
+
+    console.print(table)
+
+
+def display_mutual_fund_type_detail(type_detail: Dict[str, Any]) -> None:
+    """
+    Display detailed information about a specific mutual fund type.
+
+    Args:
+        type_detail: Dictionary containing fund type data
+    """
+    if not type_detail:
+        console.print("[yellow]Fund type information not found.[/yellow]")
+        return
+
+    # Create a panel for the fund type
+    title = Text(
+        f"Mutual Fund Type: {type_detail.get('name', 'Unknown')}", style="bold cyan")
+
+    # Format the panel content
+    content = []
+
+    # Overview section
+    content.append(Text("Overview", style="bold underline"))
+
+    # Count of funds
+    content.append(f"Number of Funds: {type_detail.get('count', 0):,}")
+
+    # Risk level
+    risk_level = type_detail.get("risk_level", "Medium")
+    if risk_level == "Low":
+        risk_text = Text(f"Risk Level: Low", style="green")
+    elif risk_level == "Medium":
+        risk_text = Text(f"Risk Level: Medium", style="yellow")
+    else:  # High
+        risk_text = Text(f"Risk Level: High", style="red")
+    content.append(risk_text)
+
+    # Description
+    content.append("")
+    content.append(Text("Description", style="bold underline"))
+    content.append(type_detail.get("description", "No description available."))
+
+    # Top fund families section
+    top_families = type_detail.get("top_families", [])
+    if top_families:
+        content.append("")
+        content.append(Text("Top Fund Families", style="bold underline"))
+
+        # Create a bullet list of top families with counts
+        for i, family in enumerate(top_families[:5], 1):
+            content.append(
+                f"• {family.get('name', 'Unknown')}: {family.get('count', 0):,} funds")
+
+        if len(top_families) > 5:
+            content.append(f"... and {len(top_families) - 5} more families")
+
+    # Example funds section
+    example_funds = type_detail.get("example_funds", [])
+    if example_funds:
+        content.append("")
+        content.append(Text("Example Funds", style="bold underline"))
+
+        # Create a bullet list of example funds
+        for i, fund in enumerate(example_funds[:8], 1):
+            content.append(f"• {fund}")
+
+        if len(example_funds) > 8:
+            content.append(f"... and {len(example_funds) - 8} more funds")
+
+    # Example symbols section
+    example_symbols = type_detail.get("example_symbols", [])
+    if example_symbols:
+        content.append("")
+        content.append(Text("Example Symbols", style="bold underline"))
+        content.append(", ".join(example_symbols))
+
+    # Create and display the panel
+    panel_content = "\n".join(str(line) for line in content)
+    panel = Panel(panel_content, title=title,
+                  border_style="cyan", expand=False)
+    console.print(panel)
+
+
+def display_company_profile(company: Any) -> None:
+    """
+    Display detailed company profile information.
+
+    Args:
+        company: CompanyProfile object to display
+    """
+    if not company:
+        console.print("[yellow]Company information not found.[/yellow]")
+        return
+
+    # Create a panel for the company profile
+    title = Text(
+        f"Company Profile: {company.name} ({company.symbol})", style="bold cyan")
+
+    # Format the panel content
+    content = []
+
+    # Basic Information section
+    content.append(Text("Basic Information", style="bold underline"))
+    content.append(f"Name: {company.name}")
+    content.append(f"Symbol: {company.symbol}")
+    content.append(f"Exchange: {company.exchange}")
+    content.append(f"Country: {company.country}")
+
+    if company.industry:
+        content.append(f"Industry: {company.industry}")
+    if company.sector:
+        content.append(f"Sector: {company.sector}")
+
+    if company.founded:
+        content.append(f"Founded: {company.founded}")
+    if company.employees:
+        content.append(f"Employees: {company.employees:,}")
+
+    if company.ceo:
+        content.append(f"CEO: {company.ceo}")
+
+    if company.website:
+        website_text = Text(
+            f"Website: {company.website}", style="blue underline")
+        content.append(website_text)
+
+    if company.address or company.phone:
+        content.append("")
+        content.append(Text("Contact Information", style="bold underline"))
+        if company.address:
+            content.append(f"Address: {company.address}")
+        if company.phone:
+            content.append(f"Phone: {company.phone}")
+
+    # Financial Information section if any financial metrics are available
+    if any([company.market_cap, company.revenue, company.net_income, company.pe_ratio, company.dividend_yield]):
+        content.append("")
+        content.append(Text("Financial Information", style="bold underline"))
+
+        if company.market_cap:
+            # Format market cap with appropriate units (B for billions, T for trillions)
+            if company.market_cap >= 1_000_000_000_000:
+                market_cap_str = f"${company.market_cap / 1_000_000_000_000:.2f}T"
+            elif company.market_cap >= 1_000_000_000:
+                market_cap_str = f"${company.market_cap / 1_000_000_000:.2f}B"
+            elif company.market_cap >= 1_000_000:
+                market_cap_str = f"${company.market_cap / 1_000_000:.2f}M"
+            else:
+                market_cap_str = f"${company.market_cap:,.0f}"
+
+            content.append(f"Market Cap: {market_cap_str}")
+
+        if company.revenue:
+            # Format revenue with appropriate units
+            if company.revenue >= 1_000_000_000_000:
+                revenue_str = f"${company.revenue / 1_000_000_000_000:.2f}T"
+            elif company.revenue >= 1_000_000_000:
+                revenue_str = f"${company.revenue / 1_000_000_000:.2f}B"
+            elif company.revenue >= 1_000_000:
+                revenue_str = f"${company.revenue / 1_000_000:.2f}M"
+            else:
+                revenue_str = f"${company.revenue:,.0f}"
+
+            content.append(f"Annual Revenue: {revenue_str}")
+
+        if company.net_income:
+            # Format net income with appropriate units
+            if abs(company.net_income) >= 1_000_000_000_000:
+                income_str = f"${company.net_income / 1_000_000_000_000:.2f}T"
+            elif abs(company.net_income) >= 1_000_000_000:
+                income_str = f"${company.net_income / 1_000_000_000:.2f}B"
+            elif abs(company.net_income) >= 1_000_000:
+                income_str = f"${company.net_income / 1_000_000:.2f}M"
+            else:
+                income_str = f"${company.net_income:,.0f}"
+
+            # Add color based on whether profit or loss
+            if company.net_income >= 0:
+                income_text = Text(f"Net Income: {income_str}", style="green")
+            else:
+                income_text = Text(f"Net Income: {income_str}", style="red")
+
+            content.append(income_text)
+
+        if company.pe_ratio:
+            content.append(f"P/E Ratio: {company.pe_ratio:.2f}")
+
+        if company.dividend_yield:
+            content.append(f"Dividend Yield: {company.dividend_yield:.2f}%")
+
+    # Executive section if available
+    if company.executives and len(company.executives) > 0:
+        content.append("")
+        content.append(Text("Key Executives", style="bold underline"))
+
+        # Limit to top 5 execs to avoid lengthy display
+        for exec in company.executives[:5]:
+            exec_line = f"• {exec.name}, {exec.title}"
+            if exec.salary:
+                exec_line += f" - Salary: ${exec.salary:,.0f}"
+
+            content.append(exec_line)
+
+        if len(company.executives) > 5:
+            content.append(
+                f"... {len(company.executives) - 5} more executives not shown")
+
+    # Description section if available
+    if company.description:
+        content.append("")
+        content.append(Text("Business Description", style="bold underline"))
+
+        # Wrap the description to fit in the panel
+        from textwrap import fill
+        wrapped_description = fill(company.description, width=100)
+        content.append(wrapped_description)
+
+    # Create and display the panel
+    panel_content = "\n".join(str(line) for line in content)
+    panel = Panel(panel_content, title=title,
+                  border_style="cyan", expand=False)
+    console.print(panel)
+
+
+def display_company_search_results(companies: List[Dict[str, Any]], query: str) -> None:
+    """
+    Display search results for companies.
+
+    Args:
+        companies: List of dictionaries with company information
+        query: Original search query
+    """
+    if not companies:
+        console.print(
+            f"[yellow]No companies found matching '{query}'.[/yellow]")
+        return
+
+    table = Table(
+        title=f"Company Search Results for '{query}' ({len(companies)} found)")
+
+    # Add columns
+    table.add_column("Symbol", style="cyan")
+    table.add_column("Name")
+    table.add_column("Exchange")
+    table.add_column("Country")
+    table.add_column("Type")
+
+    # Add rows
+    for company in companies:
+        table.add_row(
+            company.get("symbol", ""),
+            company.get("name", ""),
+            company.get("exchange", ""),
+            company.get("country", ""),
+            company.get("type", "")
+        )
+
+    console.print(table)
+    console.print(
+        "[blue]Tip: Use 'stockcli company info SYMBOL' to get detailed company information.[/blue]")
