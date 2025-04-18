@@ -5,14 +5,13 @@ StockCLI is a command-line tool for fetching the latest stock exchange and finan
 ## Features
 
 - **Real-time Stock Quotes:** Fetch current quotes for one or more stock symbols.
-- **Auto-Refresh:** Enable live auto-refresh of quotes with configurable intervals.
-- **Export Functionality:** Export fetched quotes, symbols, forex pairs, cryptocurrency and funds information to JSON and/or CSV files.
-- **Multiple Data Categories:** List and filter available symbols, forex pairs, cryptocurrencies, and funds (ETFs and mutual funds).
-- **Bonds Data:** List bonds with detailed information and filtering options.
-- **Commodity Data:** List commodity pairs and groups with their descriptions.
-- **Exchange Details & Trading Hours:** Fetch and display detailed exchange information along with trading schedules.
-- **Custom Output Directories:** Option to specify custom export locations or use the user’s home directory.
-- **Rich Terminal Display:** Uses Rich library to display formatted tables and progress spinners.
+- **Auto-Refresh:** Enable live auto-refresh of quotes with configurable intervals and a stop command.
+- **Export Functionality:** Export fetched quotes, symbols, forex pairs, cryptocurrency, fund data (ETFs and mutual funds), and bond data to JSON and/or CSV files.
+- **Multiple Data Categories:** List and filter available stocks, forex pairs, cryptocurrencies, funds, bonds, and commodities.
+- **Exchange Details & Trading Hours:** Fetch detailed exchange information along with trading schedules.
+- **Fund Data & Company Profiles:** View detailed profiles for ETFs, mutual funds (including mutual fund type details), and company profiles.
+- **Custom Output Directories:** Specify custom export locations or use the user’s home directory.
+- **Rich Terminal Display:** Enjoy formatted tables, panels, and progress spinners for an enhanced terminal experience.
 
 ## Installation
 
@@ -131,7 +130,7 @@ After installation, you can explore the available commands:
 
 - **Stop Auto-Refresh:**
 
-  If auto-refresh is running, you can stop it:
+  Stop any running auto-refresh processes:
   
   ```bash
   stockcli stock stop
