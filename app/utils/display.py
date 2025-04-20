@@ -2,7 +2,8 @@
 Utility functions for displaying data in the console.
 """
 
-from datetime import datetime
+import calendar
+from datetime import date, datetime
 import logging
 from typing import List, Dict, Any, Optional
 import click
@@ -15,9 +16,13 @@ from rich.box import Box
 
 from app.models.bond import Bond
 from app.models.commodity import CommodityGroup, CommodityPair
+from app.models.divided_calendar import DividendCalendar, DividendCalendarEvent
+from app.models.dividend import DividendHistory
 from app.models.etf import ETF
 from app.models.exchange_details import ExchangeSchedule
 from app.models.forex import ForexRate
+from app.models.splits import SplitHistory
+from app.models.splits_calendar import SplitCalendarEvent, SplitsCalendar
 from app.models.stock import TimeSeries
 from app.models.symbol import Symbol, Exchange
 
@@ -2339,3 +2344,967 @@ def display_company_search_results(companies: List[Dict[str, Any]], query: str) 
     console.print(table)
     console.print(
         "[blue]Tip: Use 'stockcli company info SYMBOL' to get detailed company information.[/blue]")
+
+# This contains display functions to be added to display.py
+
+def display_dividend_history(dividend_history: 'DividendHistory', show_details: bool = False) -> None:
+    """
+    Display dividend history for a stock symbol.
+    
+    Args:
+        dividend_history: DividendHistory object containing dividend data
+        show_details: Whether to show detailed dividend information
+    """
+    if not dividend_history.dividends:
+        console.print(f"[yellow]No dividend history found for {dividend_history.symbol}[/yellow]")
+        return
+    
+    # Display header with stock information
+    console.print()
+    console.print(
+        Panel(
+            f"[bold blue]{dividend_history.symbol}[/bold blue] - [white]{dividend_history.name}[/white]\n"
+            f"Exchange: {dividend_history.exchange} ({dividend_history.mic_code})\n"
+            f"Country: {dividend_history.country}\n"
+            f"Type: {dividend_history.type}\n"
+            f"Currency: {dividend_history.currency}\n"
+            f"Total Dividends: {len(dividend_history.dividends)}"
+        )
+    )
+    
+    # Display annual summary
+    annual = dividend_history.annual_dividends()
+    if annual:
+        annual_table = Table(title="Annual Dividend Summary")
+        annual_table.add_column("Year", style="cyan")
+        annual_table.add_column(f"Total Dividend ({dividend_history.currency})", style="green")
+        
+        # Add growth rate column if we have more than one year
+        if len(annual) > 1:
+            annual_table.add_column("YoY Growth %", style="yellow")
+            growth_rates = dividend_history.dividend_growth_rate()
+        
+        for year, amount in annual.items():
+            # Format the amount with 4 decimal places
+            formatted_amount = f"{amount:.4f}"
+            
+            # Add growth rate if available
+            if len(annual) > 1 and year in growth_rates and dividend_history.dividend_growth_rate():
+                growth = growth_rates[year]
+                growth_text = f"{growth:.2f}%"
+                # Color code growth (green for positive, red for negative)
+                growth_style = "[green]" if growth >= 0 else "[red]"
+                growth_display = f"{growth_style}{growth_text}[/]"
+                annual_table.add_row(str(year), formatted_amount, growth_display)
+            else:
+                annual_table.add_row(str(year), formatted_amount)
+        
+        console.print(annual_table)
+        
+        # Show summary statistics
+        total = dividend_history.total_dividends()
+        average = dividend_history.average_annual_dividend()
+        console.print(f"Total Dividends Paid: [green]{total:.4f} {dividend_history.currency}[/green]")
+        console.print(f"Average Annual Dividend: [green]{average:.4f} {dividend_history.currency}[/green]")
+    
+    # If show_details is enabled, display each dividend payment
+    if show_details:
+        console.print("\n[bold]Detailed Dividend History[/bold]")
+        detail_table = Table(title="Individual Dividend Payments")
+        detail_table.add_column("Ex-Date", style="cyan")
+        detail_table.add_column("Payment Date", style="cyan")
+        detail_table.add_column(f"Amount ({dividend_history.currency})", style="green")
+        detail_table.add_column("Frequency", style="yellow")
+        detail_table.add_column("Description", style="white")
+        
+        # Sort dividends by ex-dividend date (most recent first)
+        sorted_dividends = sorted(
+            dividend_history.dividends,
+            key=lambda d: d.ex_dividend_date or datetime.min,
+            reverse=True
+        )
+        
+        for dividend in sorted_dividends:
+            ex_date = dividend.ex_dividend_date.strftime("%Y-%m-%d") if dividend.ex_dividend_date else "N/A"
+            pay_date = dividend.payment_date.strftime("%Y-%m-%d") if dividend.payment_date else "N/A"
+            amount = f"{dividend.amount:.4f}"
+            frequency = dividend.frequency or "N/A"
+            description = dividend.description or ""
+            
+            detail_table.add_row(ex_date, pay_date, amount, frequency, description)
+        
+        console.print(detail_table)
+
+
+def display_dividend_comparison(symbols: List[str], dividend_histories: List['DividendHistory']) -> None:
+    """
+    Display a comparison of dividend histories for multiple symbols.
+    
+    Args:
+        symbols: List of stock symbols
+        dividend_histories: List of DividendHistory objects
+    """
+    if not dividend_histories:
+        console.print("[yellow]No dividend data available for comparison.[/yellow]")
+        return
+    
+    # Create a comparison table
+    comparison_table = Table(title="Dividend Comparison")
+    comparison_table.add_column("Symbol", style="cyan")
+    comparison_table.add_column("Company Name", style="white")
+    comparison_table.add_column("Dividend Count", style="yellow")
+    comparison_table.add_column("Latest Annual", style="green")
+    comparison_table.add_column("5Y Average", style="blue")
+    comparison_table.add_column("5Y Growth", style="magenta")
+    
+    # For each dividend history
+    for history in dividend_histories:
+        annual = history.annual_dividends()
+        # Get the latest year's dividend
+        latest_annual = list(annual.items())[-1][1] if annual else 0.0
+        
+        # Calculate 5-year average (or fewer years if not available)
+        recent_years = list(annual.items())[-5:] if len(annual) >= 5 else list(annual.items())
+        five_year_avg = sum(amount for _, amount in recent_years) / len(recent_years) if recent_years else 0.0
+        
+        # Calculate 5-year growth rate (or fewer years if not available)
+        growth_rate = "N/A"
+        if len(recent_years) >= 2:
+            first_year, first_amount = recent_years[0]
+            last_year, last_amount = recent_years[-1]
+            years_diff = last_year - first_year
+            if years_diff > 0 and first_amount > 0:
+                cagr = ((last_amount / first_amount) ** (1 / years_diff) - 1) * 100
+                growth_rate = f"{cagr:.2f}%"
+                # Color code growth (green for positive, red for negative)
+                growth_rate = f"[green]{growth_rate}[/]" if cagr >= 0 else f"[red]{growth_rate}[/]"
+        
+        comparison_table.add_row(
+            history.symbol,
+            history.name,
+            str(len(history.dividends)),
+            f"{latest_annual:.4f} {history.currency}" if latest_annual > 0 else "N/A",
+            f"{five_year_avg:.4f} {history.currency}" if five_year_avg > 0 else "N/A",
+            growth_rate
+        )
+    
+    console.print(comparison_table)
+
+
+def display_dividend_calendar(dividend_calendar: 'DividendCalendar', 
+                             view_mode: str = 'calendar',
+                             date_field: str = 'ex_dividend_date',
+                             sort_column: Optional[str] = None) -> None:
+    """
+    Display dividend calendar in various formats.
+    
+    Args:
+        dividend_calendar: DividendCalendar object containing events
+        view_mode: Display mode ('calendar', 'list', 'summary')
+        date_field: Which date to organize by ('ex_dividend_date', 'payment_date', etc.)
+        sort_column: Column to sort by in list view
+    """
+    if not dividend_calendar.events:
+        console.print(f"[yellow]No dividend events found in the selected date range.[/yellow]")
+        return
+    
+    # Informational header
+    console.print()
+    date_range_text = f"{dividend_calendar.start_date.strftime('%Y-%m-%d')} to {dividend_calendar.end_date.strftime('%Y-%m-%d')}"
+    console.print(
+        Panel(
+            f"[bold blue]Dividend Calendar[/bold blue] - {date_range_text}\n"
+            f"[white]Total Events:[/white] {len(dividend_calendar.events)} | "
+            f"Date Field: [cyan]{date_field}[/cyan] | "
+            f"View Mode: [cyan]{view_mode}[/cyan]"
+        )
+    )
+    
+    # Use the appropriate display based on view_mode
+    if view_mode == 'calendar':
+        _display_calendar_view(dividend_calendar, date_field)
+    elif view_mode == 'list':
+        _display_list_view(dividend_calendar, date_field, sort_column)
+    elif view_mode == 'summary':
+        _display_summary_view(dividend_calendar)
+    else:
+        console.print(f"[red]Invalid view mode: {view_mode}. Using list view.[/red]")
+        _display_list_view(dividend_calendar, date_field, sort_column)
+
+
+def _display_calendar_view(dividend_calendar: 'DividendCalendar', date_field: str) -> None:
+    """
+    Display dividend events in a calendar format.
+    
+    Args:
+        dividend_calendar: DividendCalendar object containing events
+        date_field: Which date field to organize by
+    """
+    # Group events by date
+    events_by_date = dividend_calendar.get_events_by_date(date_field)
+    
+    # Determine the months we need to display
+    start_month = date(dividend_calendar.start_date.year, 
+                       dividend_calendar.start_date.month, 1)
+    
+    # Calculate the end month (last day of the month containing end_date)
+    end_month_last_day = calendar.monthrange(
+        dividend_calendar.end_date.year, 
+        dividend_calendar.end_date.month
+    )[1]
+    end_month = date(dividend_calendar.end_date.year,
+                    dividend_calendar.end_date.month,
+                    end_month_last_day)
+    
+    # Generate a sequence of months to display
+    current_month = start_month
+    while current_month <= end_month:
+        _display_month_calendar(current_month, events_by_date, 
+                               dividend_calendar.start_date,
+                               dividend_calendar.end_date)
+        
+        # Move to the next month
+        if current_month.month == 12:
+            current_month = date(current_month.year + 1, 1, 1)
+        else:
+            current_month = date(current_month.year, current_month.month + 1, 1)
+
+
+def _display_month_calendar(month_date: date, events_by_date: Dict[date, List['DividendCalendarEvent']],
+                           start_date: date, end_date: date) -> None:
+    """
+    Display a single month of the calendar.
+    
+    Args:
+        month_date: First day of the month to display
+        events_by_date: Dictionary mapping dates to lists of events
+        start_date: Overall calendar start date
+        end_date: Overall calendar end date
+    """
+    # Create month title
+    month_name = month_date.strftime("%B %Y")
+    console.print(f"\n[bold cyan]{month_name}[/bold cyan]")
+    
+    # Create a calendar table
+    calendar_table = Table(show_header=True)
+    calendar_table.add_column("Mon", style="cyan", justify="center")
+    calendar_table.add_column("Tue", style="cyan", justify="center")
+    calendar_table.add_column("Wed", style="cyan", justify="center")
+    calendar_table.add_column("Thu", style="cyan", justify="center")
+    calendar_table.add_column("Fri", style="cyan", justify="center")
+    calendar_table.add_column("Sat", style="magenta", justify="center")
+    calendar_table.add_column("Sun", style="magenta", justify="center")
+    
+    # Get the calendar for this month
+    cal = calendar.monthcalendar(month_date.year, month_date.month)
+    
+    # For each week in the calendar
+    for week in cal:
+        row = []
+        # For each day in the week
+        for day_num in week:
+            if day_num == 0:
+                # Day is outside the month
+                row.append("")
+            else:
+                # Create the date object
+                day_date = date(month_date.year, month_date.month, day_num)
+                
+                # If this date is outside our range, gray it out
+                if day_date < start_date or day_date > end_date:
+                    day_text = f"[dim]{day_num}[/dim]"
+                else:
+                    # Check if we have events on this date
+                    day_events = events_by_date.get(day_date, [])
+                    if day_events:
+                        # Highlight dates with events
+                        count = len(day_events)
+                        # Create a string listing symbols
+                        symbols = []
+                        for event in day_events[:3]:  # Limit to first 3
+                            symbols.append(event.symbol)
+                        
+                        symbol_text = ", ".join(symbols)
+                        if count > 3:
+                            symbol_text += f" +{count - 3} more"
+                        
+                        day_text = f"[bold green]{day_num}[/bold green]\n[white size=8]{symbol_text}[/white size=8]"
+                    else:
+                        day_text = f"{day_num}"
+                
+                row.append(day_text)
+        
+        calendar_table.add_row(*row)
+    
+    console.print(calendar_table)
+
+
+def _display_list_view(dividend_calendar: 'DividendCalendar', 
+                      date_field: str,
+                      sort_column: Optional[str] = None) -> None:
+    """
+    Display dividend events as a list.
+    
+    Args:
+        dividend_calendar: DividendCalendar object containing events
+        date_field: Which date field to organize by
+        sort_column: Column to sort by
+    """
+    # Create a table for the events
+    events_table = Table(title=f"Dividend Events ({date_field})")
+    events_table.add_column("Symbol", style="cyan")
+    events_table.add_column("Name", style="white")
+    events_table.add_column("Ex-Date", style="yellow")
+    events_table.add_column("Pay Date", style="green")
+    events_table.add_column("Amount", style="cyan", justify="right")
+    events_table.add_column("Yield", style="magenta", justify="right")
+    events_table.add_column("Frequency", style="blue")
+    
+    # Sort the events by the appropriate date field
+    sorted_events = sorted(
+        dividend_calendar.events,
+        key=lambda e: getattr(e, date_field) or datetime.max
+    )
+    
+    # Add events to the table
+    for event in sorted_events:
+        # Format dates
+        ex_date = event.ex_dividend_date.strftime("%Y-%m-%d") if event.ex_dividend_date else "N/A"
+        pay_date = event.payment_date.strftime("%Y-%m-%d") if event.payment_date else "N/A"
+        
+        # Format amount
+        amount_text = f"{event.amount:.4f} {event.currency}"
+        
+        # Format yield
+        yield_text = f"{event.yield_value:.2f}%" if event.yield_value is not None else "N/A"
+        
+        events_table.add_row(
+            event.symbol,
+            event.name or "",
+            ex_date,
+            pay_date,
+            amount_text,
+            yield_text,
+            event.frequency or "N/A"
+        )
+    
+    console.print(events_table)
+
+
+def _display_summary_view(dividend_calendar: 'DividendCalendar') -> None:
+    """
+    Display a summary of dividend events.
+    
+    Args:
+        dividend_calendar: DividendCalendar object containing events
+    """
+    # Group events by symbol
+    events_by_symbol = dividend_calendar.get_events_by_symbol()
+    
+    # Create a summary table
+    summary_table = Table(title="Dividend Calendar Summary")
+    summary_table.add_column("Symbol", style="cyan")
+    summary_table.add_column("Company", style="white")
+    summary_table.add_column("Count", style="yellow", justify="center")
+    summary_table.add_column("Total Amount", style="green", justify="right")
+    summary_table.add_column("Upcoming Ex-Date", style="magenta")
+    summary_table.add_column("Upcoming Pay Date", style="blue")
+    
+    # For each symbol
+    for symbol, events in sorted(events_by_symbol.items()):
+        # Basic information
+        company_name = events[0].name or ""
+        count = len(events)
+        
+        # Calculate total dividend amount
+        total_amount = sum(event.amount for event in events)
+        total_amount_text = f"{total_amount:.4f} {events[0].currency}"
+        
+        # Find upcoming dates
+        upcoming_ex_date = "None"
+        upcoming_pay_date = "None"
+        
+        future_events = [e for e in events if e.ex_dividend_date and e.ex_dividend_date.date() >= date.today()]
+        if future_events:
+            # Sort by ex-dividend date
+            future_events.sort(key=lambda e: e.ex_dividend_date)
+            if future_events[0].ex_dividend_date:
+                upcoming_ex_date = future_events[0].ex_dividend_date.strftime("%Y-%m-%d")
+            if future_events[0].payment_date:
+                upcoming_pay_date = future_events[0].payment_date.strftime("%Y-%m-%d")
+        
+        summary_table.add_row(
+            symbol,
+            company_name,
+            str(count),
+            total_amount_text,
+            upcoming_ex_date,
+            upcoming_pay_date
+        )
+    
+    console.print(summary_table)
+
+def display_stock_splits(split_history: 'SplitHistory', detailed: bool = False) -> None:
+    """
+    Display stock splits for a symbol.
+    
+    Args:
+        split_history: SplitHistory object containing split data
+        detailed: Whether to show detailed information
+    """
+    if not split_history.splits:
+        console.print(f"[yellow]No stock splits found for {split_history.symbol}[/yellow]")
+        return
+    
+    # Display header with stock information
+    console.print()
+    console.print(
+        Panel(
+            f"[bold blue]{split_history.symbol}[/bold blue] - [white]{split_history.name}[/white]\n"
+            f"Total Splits: {len(split_history.splits)}\n"
+            f"Years with Splits: {', '.join(str(year) for year in split_history.get_years_with_splits())}\n"
+            f"Cumulative Split Factor: {split_history.get_cumulative_split_factor():.4f}x"
+        )
+    )
+    
+    # Display the splits table
+    table = Table(title=f"Stock Splits for {split_history.symbol}")
+    table.add_column("Date", style="cyan")
+    table.add_column("Split Ratio", style="magenta")
+    table.add_column("To/From", style="yellow")
+    
+    if detailed:
+        table.add_column("Effect", style="green")
+        table.add_column("Exchange", style="blue")
+    
+    for split in split_history.splits:
+        date_str = split.date.strftime("%Y-%m-%d") if split.date else "Unknown"
+        ratio_str = f"{split.ratio:.2f}x"
+        to_from_str = split.split_text
+        
+        if detailed:
+            table.add_row(
+                date_str,
+                ratio_str,
+                to_from_str,
+                split.effect_description,
+                split.exchange or "N/A"
+            )
+        else:
+            table.add_row(
+                date_str,
+                ratio_str,
+                to_from_str
+            )
+    
+    console.print(table)
+    
+    # If detailed view is requested, show additional information
+    if detailed:
+        display_splits_by_year(split_history)
+        display_split_impact(split_history)
+
+
+def display_splits_by_year(split_history: 'SplitHistory') -> None:
+    """Display splits grouped by year."""
+    splits_by_year = split_history.get_splits_by_year()
+    
+    if not splits_by_year:
+        return
+    
+    console.print("\n[bold]Splits by Year[/bold]")
+    
+    for year, splits in sorted(splits_by_year.items(), reverse=True):
+        yearly_table = Table(title=f"Splits in {year}")
+        yearly_table.add_column("Date", style="cyan", justify="left")
+        yearly_table.add_column("Split Ratio", style="magenta", justify="center")
+        yearly_table.add_column("To/From", style="yellow", justify="center")
+        
+        for split in splits:
+            date_str = split.date.strftime("%Y-%m-%d") if split.date else "Unknown"
+            ratio_str = f"{split.ratio:.2f}x"
+            
+            # Apply color based on split type
+            color = "[green]" if split.is_forward_split else "[red]" if split.is_reverse_split else ""
+            to_from_str = f"{color}{split.split_text}[/]" if color else split.split_text
+            
+            yearly_table.add_row(date_str, ratio_str, to_from_str)
+        
+        # Calculate cumulative effect for the year
+        year_start = datetime(year, 1, 1)
+        year_end = datetime(year, 12, 31)
+        yearly_factor = split_history.get_cumulative_split_factor(year_start, year_end)
+        
+        yearly_effect = ""
+        if yearly_factor > 1.0:
+            yearly_effect = f"[green]A position created at the start of {year} would be {yearly_factor:.2f}x larger by year-end due to splits[/green]"
+        elif yearly_factor < 1.0:
+            yearly_effect = f"[red]A position created at the start of {year} would be reduced to {yearly_factor:.2f}x of its original size by year-end due to splits[/red]"
+        
+        # Only show year sections that have splits
+        if splits:
+            console.print(yearly_table)
+            if yearly_effect:
+                console.print(yearly_effect)
+            console.print()
+
+
+def display_split_impact(split_history: 'SplitHistory') -> None:
+    """Display the impact of splits on a hypothetical share position."""
+    if not split_history.splits:
+        return
+    
+    # Find the earliest and latest split dates
+    earliest_date = min((s.date for s in split_history.splits if s.date), default=None)
+    latest_date = max((s.date for s in split_history.splits if s.date), default=None)
+    
+    if not earliest_date or not latest_date:
+        return
+    
+    console.print("\n[bold]Split Impact Analysis[/bold]")
+    
+    # Calculate cumulative split factor
+    cumulative_factor = split_history.get_cumulative_split_factor()
+    
+    # Create a table for the impact analysis
+    impact_table = Table(title="Impact of All Splits")
+    impact_table.add_column("Starting Shares", justify="center")
+    impact_table.add_column("Date Range", justify="center")
+    impact_table.add_column("Total Splits", justify="center")
+    impact_table.add_column("Cumulative Factor", justify="center")
+    impact_table.add_column("Ending Shares", justify="center")
+    
+    # Example share counts to demonstrate impact
+    for initial_shares in [100, 1000]:
+        final_shares = initial_shares * cumulative_factor
+        
+        # Format the date range
+        date_range = f"{earliest_date.strftime('%Y-%m-%d')} to {latest_date.strftime('%Y-%m-%d')}"
+        
+        # Calculate net change
+        net_change = final_shares - initial_shares
+        net_pct = (net_change / initial_shares) * 100
+        
+        # Format the ending shares with color
+        if final_shares > initial_shares:
+            ending_shares_text = f"[green]{final_shares:.0f} (+{net_change:.0f}, +{net_pct:.1f}%)[/green]"
+        elif final_shares < initial_shares:
+            ending_shares_text = f"[red]{final_shares:.1f} ({net_change:.1f}, {net_pct:.1f}%)[/red]"
+        else:
+            ending_shares_text = f"{final_shares:.0f} (no change)"
+        
+        impact_table.add_row(
+            f"{initial_shares}",
+            date_range,
+            f"{len(split_history.splits)}",
+            f"{cumulative_factor:.4f}x",
+            ending_shares_text
+        )
+    
+    console.print(impact_table)
+    
+    # Add a note about the analysis
+    if cumulative_factor > 1.0:
+        console.print(f"[green]A shareholder who held {split_history.symbol} continuously since {earliest_date.strftime('%Y-%m-%d')} would have {cumulative_factor:.2f}x more shares today due to stock splits.[/green]")
+    elif cumulative_factor < 1.0:
+        console.print(f"[red]A shareholder who held {split_history.symbol} continuously since {earliest_date.strftime('%Y-%m-%d')} would have their position reduced to {cumulative_factor:.2f}x of the original share count due to reverse stock splits.[/red]")
+
+
+def display_stock_splits_comparison(symbols: List[str], split_histories: List['SplitHistory']) -> None:
+    """
+    Display a comparison of stock splits for multiple symbols.
+    
+    Args:
+        symbols: List of symbols
+        split_histories: List of SplitHistory objects
+    """
+    if not split_histories:
+        console.print("[yellow]No stock split data available for comparison.[/yellow]")
+        return
+    
+    # Create a comparison table
+    comparison_table = Table(title="Stock Splits Comparison")
+    comparison_table.add_column("Symbol", style="cyan")
+    comparison_table.add_column("Company Name", style="white")
+    comparison_table.add_column("Total Splits", style="yellow")
+    comparison_table.add_column("Most Recent", style="green")
+    comparison_table.add_column("Most Recent Ratio", style="blue")
+    comparison_table.add_column("Cumulative Factor", style="magenta")
+    
+    # For each split history
+    for history in split_histories:
+        recent_split = history.splits[0] if history.splits else None
+        recent_date = recent_split.date.strftime("%Y-%m-%d") if recent_split and recent_split.date else "N/A"
+        recent_ratio = f"{recent_split.split_text}" if recent_split else "N/A"
+        
+        # Calculate cumulative factor
+        cumulative_factor = history.get_cumulative_split_factor()
+        if cumulative_factor > 1.0:
+            factor_text = f"[green]{cumulative_factor:.2f}x[/]"
+        elif cumulative_factor < 1.0:
+            factor_text = f"[red]{cumulative_factor:.2f}x[/]"
+        else:
+            factor_text = f"{cumulative_factor:.2f}x"
+        
+        comparison_table.add_row(
+            history.symbol,
+            history.name or "",
+            str(len(history.splits)),
+            recent_date,
+            recent_ratio,
+            factor_text
+        )
+    
+    console.print(comparison_table)
+    
+    # Create a timeline visualization
+    console.print("\n[bold]Split Timeline Visualization[/bold]")
+    
+    # Find the range of years
+    all_years = set()
+    for history in split_histories:
+        all_years.update(history.get_years_with_splits())
+    
+    if not all_years:
+        return
+        
+    years_range = range(min(all_years), max(all_years) + 1)
+    
+    # Create a timeline table
+    timeline_table = Table(title="Splits by Year and Company")
+    timeline_table.add_column("Symbol", style="cyan")
+    
+    # Add a column for each year
+    for year in sorted(years_range, reverse=True):
+        timeline_table.add_column(str(year), justify="center")
+    
+    # Add rows for each company
+    for history in split_histories:
+        row = [history.symbol]
+        years_with_splits = history.get_splits_by_year()
+        
+        for year in sorted(years_range, reverse=True):
+            if year in years_with_splits:
+                # Count splits in this year and get their total effect
+                splits_in_year = years_with_splits[year]
+                year_start = datetime(year, 1, 1)
+                year_end = datetime(year, 12, 31)
+                year_factor = history.get_cumulative_split_factor(year_start, year_end)
+                
+                # Add colored indicators with split counts
+                if year_factor > 1.0:
+                    row.append(f"[green]✓ ({len(splits_in_year)})[/]")
+                elif year_factor < 1.0:
+                    row.append(f"[red]✓ ({len(splits_in_year)})[/]")
+                else:
+                    row.append(f"✓ ({len(splits_in_year)})")
+            else:
+                row.append("")
+        
+        timeline_table.add_row(*row)
+    
+    console.print(timeline_table)
+    console.print("[green]✓[/] - Forward split (increases shares)")
+    console.print("[red]✓[/] - Reverse split (decreases shares)")
+
+def display_splits_calendar(splits_calendar: 'SplitsCalendar', 
+                           view_mode: str = 'calendar',
+                           sort_column: Optional[str] = None) -> None:
+    """
+    Display stock splits calendar in various formats.
+    
+    Args:
+        splits_calendar: SplitsCalendar object containing events
+        view_mode: Display mode ('calendar', 'list', 'summary')
+        sort_column: Column to sort by in list view
+    """
+    if not splits_calendar.events:
+        console.print(f"[yellow]No stock splits found in the selected date range.[/yellow]")
+        return
+    
+    # Informational header
+    console.print()
+    date_range_text = f"{splits_calendar.start_date.strftime('%Y-%m-%d')} to {splits_calendar.end_date.strftime('%Y-%m-%d')}"
+    console.print(
+        Panel(
+            f"[bold blue]Stock Splits Calendar[/bold blue] - {date_range_text}\n"
+            f"[white]Total Events:[/white] {len(splits_calendar.events)} | "
+            f"View Mode: [cyan]{view_mode}[/cyan]"
+        )
+    )
+    
+    # Use the appropriate display based on view_mode
+    if view_mode == 'calendar':
+        _display_splits_calendar_view(splits_calendar)
+    elif view_mode == 'list':
+        _display_splits_list_view(splits_calendar, sort_column)
+    elif view_mode == 'summary':
+        _display_splits_summary_view(splits_calendar)
+    else:
+        console.print(f"[red]Invalid view mode: {view_mode}. Using list view.[/red]")
+        _display_splits_list_view(splits_calendar, sort_column)
+
+
+def _display_splits_calendar_view(splits_calendar: 'SplitsCalendar') -> None:
+    """
+    Display stock splits events in a calendar format.
+    
+    Args:
+        splits_calendar: SplitsCalendar object containing events
+    """
+    # Group events by date
+    events_by_date = splits_calendar.get_events_by_date()
+    
+    # Determine the months we need to display
+    start_month = date(splits_calendar.start_date.year, 
+                       splits_calendar.start_date.month, 1)
+    
+    # Calculate the end month (last day of the month containing end_date)
+    end_month_last_day = calendar.monthrange(
+        splits_calendar.end_date.year, 
+        splits_calendar.end_date.month
+    )[1]
+    end_month = date(splits_calendar.end_date.year,
+                    splits_calendar.end_date.month,
+                    end_month_last_day)
+    
+    # Generate a sequence of months to display
+    current_month = start_month
+    while current_month <= end_month:
+        _display_month_calendar(current_month, events_by_date, 
+                               splits_calendar.start_date,
+                               splits_calendar.end_date)
+        
+        # Move to the next month
+        if current_month.month == 12:
+            current_month = date(current_month.year + 1, 1, 1)
+        else:
+            current_month = date(current_month.year, current_month.month + 1, 1)
+
+
+def _display_month_calendar(month_date: date, 
+                           events_by_date: Dict[date, List['SplitCalendarEvent']],
+                           start_date: date, end_date: date) -> None:
+    """
+    Display a single month of the calendar.
+    
+    Args:
+        month_date: First day of the month to display
+        events_by_date: Dictionary mapping dates to lists of events
+        start_date: Overall calendar start date
+        end_date: Overall calendar end date
+    """
+    # Create month title
+    month_name = month_date.strftime("%B %Y")
+    console.print(f"\n[bold cyan]{month_name}[/bold cyan]")
+    
+    # Create a calendar table
+    calendar_table = Table(show_header=True)
+    calendar_table.add_column("Mon", style="cyan", justify="center")
+    calendar_table.add_column("Tue", style="cyan", justify="center")
+    calendar_table.add_column("Wed", style="cyan", justify="center")
+    calendar_table.add_column("Thu", style="cyan", justify="center")
+    calendar_table.add_column("Fri", style="cyan", justify="center")
+    calendar_table.add_column("Sat", style="magenta", justify="center")
+    calendar_table.add_column("Sun", style="magenta", justify="center")
+    
+    # Get the calendar for this month
+    cal = calendar.monthcalendar(month_date.year, month_date.month)
+    
+    # For each week in the calendar
+    for week in cal:
+        row = []
+        # For each day in the week
+        for day_num in week:
+            if day_num == 0:
+                # Day is outside the month
+                row.append("")
+            else:
+                # Create the date object
+                day_date = date(month_date.year, month_date.month, day_num)
+                
+                # If this date is outside our range, gray it out
+                if day_date < start_date or day_date > end_date:
+                    day_text = f"[dim]{day_num}[/dim]"
+                else:
+                    # Check if we have events on this date
+                    day_events = events_by_date.get(day_date, [])
+                    if day_events:
+                        # Count forward and reverse splits
+                        forward_splits = sum(1 for e in day_events if e.is_forward_split)
+                        reverse_splits = sum(1 for e in day_events if e.is_reverse_split)
+                        
+                        # Highlight dates with events
+                        count = len(day_events)
+                        # Create a string listing symbols
+                        symbols = []
+                        for event in day_events[:3]:  # Limit to first 3
+                            # Color-code by split type
+                            if event.is_forward_split:
+                                symbols.append(f"[green]{event.symbol}[/]")
+                            elif event.is_reverse_split:
+                                symbols.append(f"[red]{event.symbol}[/]")
+                            else:
+                                symbols.append(f"{event.symbol}")
+                        
+                        symbol_text = ", ".join(symbols)
+                        if count > 3:
+                            symbol_text += f" +{count - 3} more"
+                        
+                        # Format day number based on which type of splits are more common
+                        if forward_splits > reverse_splits:
+                            day_text = f"[bold green]{day_num}[/bold green]\n[white size=8]{symbol_text}[/white size=8]"
+                        elif reverse_splits > forward_splits:
+                            day_text = f"[bold red]{day_num}[/bold red]\n[white size=8]{symbol_text}[/white size=8]"
+                        else:
+                            day_text = f"[bold blue]{day_num}[/bold blue]\n[white size=8]{symbol_text}[/white size=8]"
+                    else:
+                        day_text = f"{day_num}"
+                
+                row.append(day_text)
+        
+        calendar_table.add_row(*row)
+    
+    console.print(calendar_table)
+    console.print("[green]Company[/green]: Forward split (increases shares)")
+    console.print("[red]Company[/red]: Reverse split (decreases shares)")
+
+
+def _display_splits_list_view(splits_calendar: 'SplitsCalendar',
+                             sort_column: Optional[str] = None) -> None:
+    """
+    Display stock splits events as a list.
+    
+    Args:
+        splits_calendar: SplitsCalendar object containing events
+        sort_column: Column to sort by
+    """
+    # Create a table for the events
+    events_table = Table(title=f"Stock Splits Events")
+    events_table.add_column("Date", style="cyan")
+    events_table.add_column("Symbol", style="blue")
+    events_table.add_column("Company", style="white")
+    events_table.add_column("Split", style="yellow")
+    events_table.add_column("Ratio", style="magenta")
+    events_table.add_column("Effect", style="green")
+    events_table.add_column("Exchange", style="cyan")
+    events_table.add_column("Status", style="blue")
+    
+    # Sort the events by date
+    sorted_events = sorted(
+        splits_calendar.events,
+        key=lambda e: e.date or datetime.max
+    )
+    
+    # Add events to the table
+    for event in sorted_events:
+        # Format date
+        date_str = event.date.strftime("%Y-%m-%d") if event.date else "N/A"
+        
+        # Format split ratio and text
+        split_text = event.split_text
+        ratio_str = f"{event.ratio:.2f}x"
+        
+        # Color-code split text based on type
+        if event.is_forward_split:
+            split_text = f"[green]{split_text}[/]"
+            ratio_str = f"[green]{ratio_str}[/]"
+        elif event.is_reverse_split:
+            split_text = f"[red]{split_text}[/]"
+            ratio_str = f"[red]{ratio_str}[/]"
+        
+        events_table.add_row(
+            date_str,
+            event.symbol,
+            event.name or "",
+            split_text,
+            ratio_str,
+            event.effect_description,
+            event.exchange or "N/A",
+            event.status or "N/A"
+        )
+    
+    console.print(events_table)
+
+
+def _display_splits_summary_view(splits_calendar: 'SplitsCalendar') -> None:
+    """
+    Display a summary of stock splits events.
+    
+    Args:
+        splits_calendar: SplitsCalendar object containing events
+    """
+    # Group events by symbol
+    events_by_symbol = splits_calendar.get_events_by_symbol()
+    
+    # Create a summary table
+    summary_table = Table(title="Stock Splits Calendar Summary")
+    summary_table.add_column("Symbol", style="cyan")
+    summary_table.add_column("Company", style="white")
+    summary_table.add_column("Total Splits", style="yellow")
+    summary_table.add_column("Forward Splits", style="green")
+    summary_table.add_column("Reverse Splits", style="red")
+    summary_table.add_column("Upcoming Split", style="magenta")
+    
+    # For each symbol
+    for symbol, events in sorted(events_by_symbol.items()):
+        # Basic information
+        company_name = events[0].name or ""
+        count = len(events)
+        
+        # Count split types
+        forward_splits = sum(1 for e in events if e.is_forward_split)
+        reverse_splits = sum(1 for e in events if e.is_reverse_split)
+        
+        # Find upcoming splits (future dates)
+        upcoming_split = "None"
+        future_events = [e for e in events if e.date and e.date.date() >= date.today()]
+        if future_events:
+            # Sort by date
+            future_events.sort(key=lambda e: e.date)
+            next_event = future_events[0]
+            if next_event.date:
+                # Format the upcoming split info
+                date_str = next_event.date.strftime("%Y-%m-%d")
+                if next_event.is_forward_split:
+                    upcoming_split = f"[green]{date_str} ({next_event.split_text})[/]"
+                elif next_event.is_reverse_split:
+                    upcoming_split = f"[red]{date_str} ({next_event.split_text})[/]"
+                else:
+                    upcoming_split = f"{date_str} ({next_event.split_text})"
+        
+        summary_table.add_row(
+            symbol,
+            company_name,
+            str(count),
+            str(forward_splits),
+            str(reverse_splits),
+            upcoming_split
+        )
+    
+    console.print(summary_table)
+    
+    # Add statistics section
+    forward_count = sum(1 for e in splits_calendar.events if e.is_forward_split)
+    reverse_count = sum(1 for e in splits_calendar.events if e.is_reverse_split)
+    total_count = len(splits_calendar.events)
+    
+    stats_table = Table(title="Summary Statistics")
+    stats_table.add_column("Total Splits", style="white", justify="center")
+    stats_table.add_column("Forward Splits", style="green", justify="center")
+    stats_table.add_column("Reverse Splits", style="red", justify="center")
+    stats_table.add_column("Forward %", style="green", justify="center")
+    stats_table.add_column("Reverse %", style="red", justify="center")
+    
+    forward_pct = (forward_count / total_count * 100) if total_count > 0 else 0
+    reverse_pct = (reverse_count / total_count * 100) if total_count > 0 else 0
+    
+    stats_table.add_row(
+        str(total_count),
+        str(forward_count),
+        str(reverse_count),
+        f"{forward_pct:.1f}%",
+        f"{reverse_pct:.1f}%"
+    )
+    
+    console.print(stats_table)

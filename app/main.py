@@ -1360,6 +1360,199 @@ def get_company_profile_shortcut(symbol: str, export: str, output_dir: str, use_
     )
 
 
+@cli.group(name="dividends")
+def dividends_shortcut():
+    """Shortcut for 'stock dividends' commands."""
+    pass
+
+
+@dividends_shortcut.command(name="history")
+@click.argument("symbol", required=True)
+@click.option("--years", "-y", default=10, type=int,
+              help="Number of years of history to retrieve (default: 10)")
+@click.option("--detailed", "-d", is_flag=True,
+              help="Show detailed dividend payment information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export dividend history to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def dividend_history_shortcut(symbol, years, detailed, export, output_dir, use_home_dir):
+    """Get dividend payment history for a stock symbol."""
+    from app.cli.commands import get_dividend_history_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_dividend_history_command,
+        symbol=symbol,
+        years=years,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@dividends_shortcut.command(name="compare")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--years", "-y", default=10, type=int,
+              help="Number of years of history to retrieve (default: 10)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_dividends_shortcut(symbols, years, export, output_dir, use_home_dir):
+    """Compare dividend histories of multiple stock symbols."""
+    from app.cli.commands import compare_dividends_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        compare_dividends_command,
+        symbols=symbols,
+        years=years,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@dividends_shortcut.command(name="calendar")
+@click.option("--start-date", "-s",
+              help="Start date in YYYY-MM-DD format (required unless --range is specified)")
+@click.option("--end-date", "-e",
+              help="End date in YYYY-MM-DD format (required unless --range is specified)")
+@click.option("--range", "-r", type=click.Choice(['today', 'week', 'month', 'quarter', 'year']),
+              help="Predefined date range (alternative to start/end dates)")
+@click.option("--symbol", help="Filter by symbol")
+@click.option("--exchange", help="Filter by exchange")
+@click.option("--view", "-v", type=click.Choice(['calendar', 'list', 'summary']),
+              default='calendar', help="View mode (default: calendar)")
+@click.option("--date-field", "-d", type=click.Choice(['ex_dividend_date', 'payment_date', 'record_date', 'declaration_date']),
+              default='ex_dividend_date', help="Date field to organize by (default: ex_dividend_date)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export dividend calendar to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def dividend_calendar_shortcut(start_date, end_date, range, symbol,
+                               exchange, view, date_field,
+                               export, output_dir, use_home_dir):
+    """Get dividend calendar for a specified date range."""
+    from app.cli.commands import dividend_calendar_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        dividend_calendar_command,
+        start_date=start_date,
+        end_date=end_date,
+        range=range,
+        symbol=symbol,
+        exchange=exchange,
+        view=view,
+        date_field=date_field,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cli.group(name="splits")
+def splits_shortcut():
+    """Shortcut for 'stock splits' commands."""
+    pass
+
+
+@splits_shortcut.command(name="history")
+@click.argument("symbol", required=True)
+@click.option("--years", "-y", default=10, type=int,
+              help="Number of years of history to retrieve (default: 10)")
+@click.option("--detailed", "-d", is_flag=True,
+              help="Show detailed split information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export splits history to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def stock_splits_history_shortcut(symbol, years, detailed, export, output_dir, use_home_dir):
+    """Get stock splits history for a stock symbol."""
+    from app.cli.commands import get_stock_splits_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_stock_splits_command,
+        symbol=symbol,
+        years=years,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@splits_shortcut.command(name="compare")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--years", "-y", default=10, type=int,
+              help="Number of years of history to retrieve (default: 10)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_stock_splits_shortcut(symbols, years, export, output_dir, use_home_dir):
+    """Compare stock splits histories of multiple stock symbols."""
+    from app.cli.commands import compare_stock_splits_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        compare_stock_splits_command,
+        symbols=symbols,
+        years=years,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@splits_shortcut.command(name="calendar")
+@click.option("--start-date", "-s", 
+              help="Start date in YYYY-MM-DD format (required unless --range is specified)")
+@click.option("--end-date", "-e", 
+              help="End date in YYYY-MM-DD format (required unless --range is specified)")
+@click.option("--range", "-r", type=click.Choice(['today', 'week', 'month', 'quarter', 'year']),
+              help="Predefined date range (alternative to start/end dates)")
+@click.option("--symbol", help="Filter by symbol")
+@click.option("--exchange", help="Filter by exchange")
+@click.option("--view", "-v", type=click.Choice(['calendar', 'list', 'summary']), 
+              default='calendar', help="View mode (default: calendar)")
+@click.option("--forward-only", is_flag=True, help="Show only forward splits")
+@click.option("--reverse-only", is_flag=True, help="Show only reverse splits")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export splits calendar to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def splits_calendar_shortcut(start_date, end_date, range, symbol, exchange, view,
+                           forward_only, reverse_only, export, output_dir, use_home_dir):
+    """Get stock splits calendar for a specified date range."""
+    from app.cli.commands import splits_calendar_command
+    ctx = click.get_current_context()
+    ctx.invoke(
+        splits_calendar_command,
+        start_date=start_date,
+        end_date=end_date,
+        range=range,
+        symbol=symbol,
+        exchange=exchange,
+        view=view,
+        forward_only=forward_only,
+        reverse_only=reverse_only,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
 def main():
     """Main entry point for the CLI app."""
     try:

@@ -9,7 +9,7 @@ import time
 import threading
 import logging
 from typing import List, Optional, Union
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.api.twelve_data import TwelveDataAPIError, client
@@ -23,7 +23,7 @@ from app.utils.helpers import (
     display_quotes_table, clear_screen
 )
 from app.utils.export import (
-    ensure_directory, export_quotes, get_default_export_dir, get_home_export_dir
+    ensure_directory, export_dividend_calendar, export_dividend_comparison, export_dividend_history, export_quotes, export_splits_calendar, export_stock_splits, export_stock_splits_comparison, get_default_export_dir, get_home_export_dir
 )
 
 # Set up logging
@@ -4027,3 +4027,669 @@ def get_company_profile(symbol: str, export: str, output_dir: str, use_home_dir:
     except Exception as e:
         logger.error(f"Error getting company profile: {e}", exc_info=True)
         click.echo(f"Error: {e}", err=True)
+
+# This contains CLI commands to be added to commands.py
+
+@stock.group(name="dividends")
+def dividend_commands():
+    """Commands for accessing dividend data."""
+    pass
+
+
+@dividend_commands.command(name="history")
+@click.argument("symbol", required=True)
+@click.option("--years", "-y", default=10, type=int, 
+              help="Number of years of history to retrieve (default: 10)")
+@click.option("--detailed", "-d", is_flag=True, 
+              help="Show detailed dividend payment information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export dividend history to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_dividend_history_command(symbol: str, years: int, detailed: bool,
+                                export: str, output_dir: str, use_home_dir: bool):
+    """
+    Get dividend payment history for a stock symbol.
+    
+    Example: stockcli dividends history AAPL --years 10 --detailed
+    """
+    symbol = symbol.upper()
+    logger.info(f"Fetching {years} years of dividend history for {symbol}")
+    
+    # Create a progress spinner
+    with create_progress_spinner(f"Fetching dividend data for {symbol}...") as progress:
+        try:
+            # Get dividend data from API
+            dividend_data = client.get_dividend_history(symbol, years)
+            
+            # Parse the response into a DividendHistory object
+            from app.models.dividend import DividendHistory
+            dividend_history = DividendHistory.from_api_response(dividend_data)
+            
+            # Display the dividend history
+            from app.utils.display import display_dividend_history
+            display_dividend_history(dividend_history, detailed)
+            
+            # Handle export if requested
+            if export:
+                export_formats = []
+                if export == 'json':
+                    export_formats = ['json']
+                elif export == 'csv':
+                    export_formats = ['csv']
+                elif export == 'both':
+                    export_formats = ['json', 'csv']
+                
+                # Determine output directory
+                if output_dir:
+                    export_output_dir = Path(output_dir).expanduser().resolve()
+                elif use_home_dir:
+                    export_output_dir = get_home_export_dir()
+                else:
+                    export_output_dir = get_default_export_dir()
+                
+                # Export the data
+                export_results = export_dividend_history(
+                    dividend_history, export_formats, export_output_dir
+                )
+                
+                if export_results:
+                    click.echo("\nExported dividend history to:")
+                    for fmt, path in export_results.items():
+                        click.echo(f"  {fmt.upper()}: {path}")
+            
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}", err=True)
+        except Exception as e:
+            logger.exception(f"Unexpected error: {e}")
+            click.echo(f"An unexpected error occurred: {e}", err=True)
+
+
+@dividend_commands.command(name="compare")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--years", "-y", default=10, type=int, 
+              help="Number of years of history to retrieve (default: 10)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_dividends_command(symbols: List[str], years: int,
+                             export: str, output_dir: str, use_home_dir: bool):
+    """
+    Compare dividend histories of multiple stock symbols.
+    
+    Example: stockcli dividends compare AAPL MSFT JNJ --years 10
+    """
+    if not symbols:
+        click.echo("Error: At least one symbol is required.", err=True)
+        return
+    
+    symbols = [symbol.upper() for symbol in symbols]
+    logger.info(f"Comparing {years} years of dividend history for: {', '.join(symbols)}")
+    
+    # Create a progress spinner
+    with create_progress_spinner(f"Fetching dividend data...") as progress:
+        try:
+            dividend_histories = []
+            failed_symbols = []
+            
+            # Get dividend data for each symbol
+            for symbol in symbols:
+                progress.update(f"Fetching dividend data for {symbol}...")
+                try:
+                    dividend_data = client.get_dividend_history(symbol, years)
+                    from app.models.dividend import DividendHistory
+                    history = DividendHistory.from_api_response(dividend_data)
+                    dividend_histories.append(history)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch dividend data for {symbol}: {e}")
+                    failed_symbols.append(symbol)
+            
+            # Report any failures
+            if failed_symbols:
+                click.echo(f"Warning: Failed to fetch data for: {', '.join(failed_symbols)}", err=True)
+            
+            # Display the comparison
+            if dividend_histories:
+                from app.utils.display import display_dividend_comparison
+                display_dividend_comparison(symbols, dividend_histories)
+                
+                # Handle export if requested
+                if export:
+                    export_formats = []
+                    if export == 'json':
+                        export_formats = ['json']
+                    elif export == 'csv':
+                        export_formats = ['csv']
+                    elif export == 'both':
+                        export_formats = ['json', 'csv']
+                    
+                    # Determine output directory
+                    if output_dir:
+                        export_output_dir = Path(output_dir).expanduser().resolve()
+                    elif use_home_dir:
+                        export_output_dir = get_home_export_dir()
+                    else:
+                        export_output_dir = get_default_export_dir()
+                    
+                    # Export the data
+                    export_results = export_dividend_comparison(
+                        dividend_histories, export_formats, export_output_dir
+                    )
+                    
+                    if export_results:
+                        click.echo("\nExported dividend comparison to:")
+                        for fmt, path in export_results.items():
+                            click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo("No dividend data available for the specified symbols.", err=True)
+            
+        except Exception as e:
+            logger.exception(f"Unexpected error: {e}")
+            click.echo(f"An unexpected error occurred: {e}", err=True)
+
+@dividend_commands.command(name="calendar")
+@click.option("--start-date", "-s", 
+              help="Start date in YYYY-MM-DD format (required unless --range is specified)")
+@click.option("--end-date", "-e", 
+              help="End date in YYYY-MM-DD format (required unless --range is specified)")
+@click.option("--range", "-r", type=click.Choice(['today', 'week', 'month', 'quarter', 'year']),
+              help="Predefined date range (alternative to start/end dates)")
+@click.option("--symbol", help="Filter by symbol")
+@click.option("--exchange", help="Filter by exchange")
+@click.option("--view", "-v", type=click.Choice(['calendar', 'list', 'summary']), 
+              default='calendar', help="View mode (default: calendar)")
+@click.option("--date-field", "-d", type=click.Choice(['ex_dividend_date', 'payment_date', 'record_date', 'declaration_date']),
+              default='ex_dividend_date', help="Date field to organize by (default: ex_dividend_date)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export dividend calendar to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def dividend_calendar_command(start_date: Optional[str], end_date: Optional[str],
+                              range: Optional[str], symbol: Optional[str],
+                              exchange: Optional[str], view: str, date_field: str,
+                              export: Optional[str], output_dir: Optional[str],
+                              use_home_dir: bool):
+    """
+    Get dividend calendar for a specified date range.
+    
+    Examples:
+    
+    - Get dividend calendar for this month:
+      stockcli dividends calendar --range month
+    
+    - Get dividend calendar for a custom date range:
+      stockcli dividends calendar --start-date 2023-01-01 --end-date 2023-03-31
+    
+    - Get dividend calendar for a specific symbol:
+      stockcli dividends calendar --range quarter --symbol AAPL
+    
+    - View as a list instead of calendar:
+      stockcli dividends calendar --range month --view list
+    
+    - View summary by symbol:
+      stockcli dividends calendar --range month --view summary
+    
+    - Organize by payment date instead of ex-dividend date:
+      stockcli dividends calendar --range month --date-field payment_date
+    """
+    logger.info(f"Fetching dividend calendar with range: {range or f'{start_date} to {end_date}'}")
+    
+    # Validate parameters
+    if not range and not (start_date and end_date):
+        click.echo(
+            "Error: Either --range OR both --start-date and --end-date must be specified.", 
+            err=True
+        )
+        return
+    
+    # Create a progress spinner
+    with create_progress_spinner(f"Fetching dividend calendar...") as progress:
+        try:
+            # Get dividend calendar data from API
+            calendar_data = client.get_dividend_calendar(
+                start_date=start_date,
+                end_date=end_date,
+                symbol=symbol,
+                exchange=exchange,
+                range_type=range
+            )
+            
+            # Parse the response into a DividendCalendar object
+            from app.models.divided_calendar import DividendCalendar
+            
+            # Determine start and end dates for display purposes
+            if range and not (start_date and end_date):
+                today = date.today()
+                if range == 'today':
+                    start_date = end_date = today.strftime("%Y-%m-%d")
+                elif range == 'week':
+                    # Start of current week (Monday)
+                    start_of_week = today - timedelta(days=today.weekday())
+                    end_of_week = start_of_week + timedelta(days=6)  # Sunday
+                    start_date = start_of_week.strftime("%Y-%m-%d")
+                    end_date = end_of_week.strftime("%Y-%m-%d")
+                elif range == 'month':
+                    # Start of current month
+                    start_of_month = date(today.year, today.month, 1)
+                    # End of current month
+                    if today.month == 12:
+                        end_of_month = date(today.year + 1, 1, 1) - timedelta(days=1)
+                    else:
+                        end_of_month = date(today.year, today.month + 1, 1) - timedelta(days=1)
+                    start_date = start_of_month.strftime("%Y-%m-%d")
+                    end_date = end_of_month.strftime("%Y-%m-%d")
+                elif range == 'quarter':
+                    # Determine current quarter
+                    quarter = (today.month - 1) // 3 + 1
+                    start_month = (quarter - 1) * 3 + 1
+                    end_month = quarter * 3
+                    # Start of current quarter
+                    start_of_quarter = date(today.year, start_month, 1)
+                    # End of current quarter
+                    if end_month == 12:
+                        end_of_quarter = date(today.year + 1, 1, 1) - timedelta(days=1)
+                    else:
+                        end_of_quarter = date(today.year, end_month + 1, 1) - timedelta(days=1)
+                    start_date = start_of_quarter.strftime("%Y-%m-%d")
+                    end_date = end_of_quarter.strftime("%Y-%m-%d")
+                elif range == 'year':
+                    # Calendar year
+                    start_of_year = date(today.year, 1, 1)
+                    end_of_year = date(today.year, 12, 31)
+                    start_date = start_of_year.strftime("%Y-%m-%d")
+                    end_date = end_of_year.strftime("%Y-%m-%d")
+            
+            # Create the calendar object
+            dividend_calendar = DividendCalendar.from_api_response(
+                calendar_data,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            # Display the dividend calendar
+            from app.utils.display import display_dividend_calendar
+            display_dividend_calendar(
+                dividend_calendar, 
+                view_mode=view,
+                date_field=date_field
+            )
+            
+            # Handle export if requested
+            if export:
+                export_formats = []
+                if export == 'json':
+                    export_formats = ['json']
+                elif export == 'csv':
+                    export_formats = ['csv']
+                elif export == 'both':
+                    export_formats = ['json', 'csv']
+                
+                # Determine output directory
+                if output_dir:
+                    export_output_dir = Path(output_dir).expanduser().resolve()
+                elif use_home_dir:
+                    export_output_dir = get_home_export_dir()
+                else:
+                    export_output_dir = get_default_export_dir()
+                
+                # Export the data
+                export_results = export_dividend_calendar(
+                    dividend_calendar, export_formats, export_output_dir, view
+                )
+                
+                if export_results:
+                    click.echo("\nExported dividend calendar to:")
+                    for fmt, path in export_results.items():
+                        click.echo(f"  {fmt.upper()}: {path}")
+            
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}", err=True)
+        except Exception as e:
+            logger.exception(f"Unexpected error: {e}")
+            click.echo(f"An unexpected error occurred: {e}", err=True)
+
+@stock.group(name="splits")
+def splits_commands():
+    """Commands for accessing stock splits data."""
+    pass
+
+
+@splits_commands.command(name="history")
+@click.argument("symbol", required=True)
+@click.option("--years", "-y", default=10, type=int, 
+              help="Number of years of history to retrieve (default: 10)")
+@click.option("--detailed", "-d", is_flag=True, 
+              help="Show detailed split information")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export splits history to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_stock_splits_command(symbol: str, years: int, detailed: bool,
+                          export: str, output_dir: str, use_home_dir: bool):
+    """
+    Get stock splits history for a stock symbol.
+    
+    Example: stockcli splits history AAPL --years 20 --detailed
+    """
+    symbol = symbol.upper()
+    logger.info(f"Fetching {years} years of stock splits history for {symbol}")
+    
+    # Create a progress spinner
+    with create_progress_spinner(f"Fetching stock splits for {symbol}...") as progress:
+        try:
+            # Get splits data from API
+            splits_data = client.get_stock_splits(symbol, years)
+            
+            # Parse the response into a SplitHistory object
+            from app.models.splits import SplitHistory
+            split_history = SplitHistory.from_api_response(splits_data, symbol)
+            
+            # Display the splits history
+            from app.utils.display import display_stock_splits
+            display_stock_splits(split_history, detailed)
+            
+            # Handle export if requested
+            if export:
+                export_formats = []
+                if export == 'json':
+                    export_formats = ['json']
+                elif export == 'csv':
+                    export_formats = ['csv']
+                elif export == 'both':
+                    export_formats = ['json', 'csv']
+                
+                # Determine output directory
+                if output_dir:
+                    export_output_dir = Path(output_dir).expanduser().resolve()
+                elif use_home_dir:
+                    export_output_dir = get_home_export_dir()
+                else:
+                    export_output_dir = get_default_export_dir()
+                
+                # Export the data
+                export_results = export_stock_splits(
+                    split_history, export_formats, export_output_dir
+                )
+                
+                if export_results:
+                    click.echo("\nExported stock splits history to:")
+                    for fmt, path in export_results.items():
+                        click.echo(f"  {fmt.upper()}: {path}")
+            
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}", err=True)
+        except Exception as e:
+            logger.exception(f"Unexpected error: {e}")
+            click.echo(f"An unexpected error occurred: {e}", err=True)
+
+
+@splits_commands.command(name="compare")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--years", "-y", default=10, type=int, 
+              help="Number of years of history to retrieve (default: 10)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison results to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_stock_splits_command(symbols: List[str], years: int,
+                               export: str, output_dir: str, use_home_dir: bool):
+    """
+    Compare stock splits histories of multiple stock symbols.
+    
+    Example: stockcli splits compare AAPL MSFT GOOG --years 15
+    """
+    if not symbols:
+        click.echo("Error: At least one symbol is required.", err=True)
+        return
+    
+    symbols = [symbol.upper() for symbol in symbols]
+    logger.info(f"Comparing {years} years of stock splits history for: {', '.join(symbols)}")
+    
+    # Create a progress spinner
+    with create_progress_spinner(f"Fetching stock splits data...") as progress:
+        try:
+            split_histories = []
+            failed_symbols = []
+            
+            # Get splits data for each symbol
+            for symbol in symbols:
+                progress.update(f"Fetching stock splits for {symbol}...")
+                try:
+                    splits_data = client.get_stock_splits(symbol, years)
+                    from app.models.splits import SplitHistory
+                    history = SplitHistory.from_api_response(splits_data, symbol)
+                    split_histories.append(history)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch stock splits for {symbol}: {e}")
+                    failed_symbols.append(symbol)
+            
+            # Report any failures
+            if failed_symbols:
+                click.echo(f"Warning: Failed to fetch data for: {', '.join(failed_symbols)}", err=True)
+            
+            # Display the comparison
+            if split_histories:
+                from app.utils.display import display_stock_splits_comparison
+                display_stock_splits_comparison(symbols, split_histories)
+                
+                # Handle export if requested
+                if export:
+                    export_formats = []
+                    if export == 'json':
+                        export_formats = ['json']
+                    elif export == 'csv':
+                        export_formats = ['csv']
+                    elif export == 'both':
+                        export_formats = ['json', 'csv']
+                    
+                    # Determine output directory
+                    if output_dir:
+                        export_output_dir = Path(output_dir).expanduser().resolve()
+                    elif use_home_dir:
+                        export_output_dir = get_home_export_dir()
+                    else:
+                        export_output_dir = get_default_export_dir()
+                    
+                    # Export the data
+                    export_results = export_stock_splits_comparison(
+                        split_histories, export_formats, export_output_dir
+                    )
+                    
+                    if export_results:
+                        click.echo("\nExported stock splits comparison to:")
+                        for fmt, path in export_results.items():
+                            click.echo(f"  {fmt.upper()}: {path}")
+            else:
+                click.echo("No stock splits data available for the specified symbols.", err=True)
+            
+        except Exception as e:
+            logger.exception(f"Unexpected error: {e}")
+            click.echo(f"An unexpected error occurred: {e}", err=True)
+
+@splits_commands.command(name="calendar")
+@click.option("--start-date", "-s", 
+              help="Start date in YYYY-MM-DD format (required unless --range is specified)")
+@click.option("--end-date", "-e", 
+              help="End date in YYYY-MM-DD format (required unless --range is specified)")
+@click.option("--range", "-r", type=click.Choice(['today', 'week', 'month', 'quarter', 'year']),
+              help="Predefined date range (alternative to start/end dates)")
+@click.option("--symbol", help="Filter by symbol")
+@click.option("--exchange", help="Filter by exchange")
+@click.option("--view", "-v", type=click.Choice(['calendar', 'list', 'summary']), 
+              default='calendar', help="View mode (default: calendar)")
+@click.option("--forward-only", is_flag=True, help="Show only forward splits")
+@click.option("--reverse-only", is_flag=True, help="Show only reverse splits")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export splits calendar to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def splits_calendar_command(start_date: Optional[str], end_date: Optional[str],
+                          range: Optional[str], symbol: Optional[str],
+                          exchange: Optional[str], view: str,
+                          forward_only: bool, reverse_only: bool,
+                          export: Optional[str], output_dir: Optional[str],
+                          use_home_dir: bool):
+    """
+    Get stock splits calendar for a specified date range.
+    
+    Examples:
+    
+    - Get stock splits calendar for this month:
+      stockcli splits calendar --range month
+    
+    - Get stock splits calendar for a custom date range:
+      stockcli splits calendar --start-date 2023-01-01 --end-date 2023-03-31
+    
+    - Get stock splits calendar for a specific symbol:
+      stockcli splits calendar --range quarter --symbol AAPL
+    
+    - View as a list instead of calendar:
+      stockcli splits calendar --range month --view list
+    
+    - View only forward or reverse splits:
+      stockcli splits calendar --range month --forward-only
+      stockcli splits calendar --range month --reverse-only
+    
+    - Export to CSV:
+      stockcli splits calendar --range month --export csv
+    """
+    logger.info(f"Fetching splits calendar with range: {range or f'{start_date} to {end_date}'}")
+    
+    # Validate parameters
+    if not range and not (start_date and end_date):
+        click.echo(
+            "Error: Either --range OR both --start-date and --end-date must be specified.", 
+            err=True
+        )
+        return
+    
+    if forward_only and reverse_only:
+        click.echo(
+            "Error: Cannot specify both --forward-only and --reverse-only at the same time.", 
+            err=True
+        )
+        return
+    
+    # Create a progress spinner
+    with create_progress_spinner(f"Fetching stock splits calendar...") as progress:
+        try:
+            # Get splits calendar data from API
+            calendar_data = client.get_splits_calendar(
+                start_date=start_date,
+                end_date=end_date,
+                symbol=symbol,
+                exchange=exchange,
+                range_type=range
+            )
+            
+            # Parse the response into a SplitsCalendar object
+            from app.models.splits_calendar import SplitsCalendar
+            
+            # Determine start and end dates for display purposes
+            if range and not (start_date and end_date):
+                today = date.today()
+                if range == 'today':
+                    start_date = end_date = today.strftime("%Y-%m-%d")
+                elif range == 'week':
+                    # Start of current week (Monday)
+                    start_of_week = today - timedelta(days=today.weekday())
+                    end_of_week = start_of_week + timedelta(days=6)  # Sunday
+                    start_date = start_of_week.strftime("%Y-%m-%d")
+                    end_date = end_of_week.strftime("%Y-%m-%d")
+                elif range == 'month':
+                    # Start of current month
+                    start_of_month = date(today.year, today.month, 1)
+                    # End of current month
+                    if today.month == 12:
+                        end_of_month = date(today.year + 1, 1, 1) - timedelta(days=1)
+                    else:
+                        end_of_month = date(today.year, today.month + 1, 1) - timedelta(days=1)
+                    start_date = start_of_month.strftime("%Y-%m-%d")
+                    end_date = end_of_month.strftime("%Y-%m-%d")
+                elif range == 'quarter':
+                    # Determine current quarter
+                    quarter = (today.month - 1) // 3 + 1
+                    start_month = (quarter - 1) * 3 + 1
+                    end_month = quarter * 3
+                    # Start of current quarter
+                    start_of_quarter = date(today.year, start_month, 1)
+                    # End of current quarter
+                    if end_month == 12:
+                        end_of_quarter = date(today.year + 1, 1, 1) - timedelta(days=1)
+                    else:
+                        end_of_quarter = date(today.year, end_month + 1, 1) - timedelta(days=1)
+                    start_date = start_of_quarter.strftime("%Y-%m-%d")
+                    end_date = end_of_quarter.strftime("%Y-%m-%d")
+                elif range == 'year':
+                    # Calendar year
+                    start_of_year = date(today.year, 1, 1)
+                    end_of_year = date(today.year, 12, 31)
+                    start_date = start_of_year.strftime("%Y-%m-%d")
+                    end_date = end_of_year.strftime("%Y-%m-%d")
+            
+            # Create the calendar object
+            splits_calendar = SplitsCalendar.from_api_response(
+                calendar_data,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            # Apply forward or reverse filters if requested
+            if forward_only:
+                splits_calendar = splits_calendar.filter_by_split_type(is_forward=True)
+            elif reverse_only:
+                splits_calendar = splits_calendar.filter_by_split_type(is_forward=False)
+            
+            # Display the splits calendar
+            from app.utils.display import display_splits_calendar
+            display_splits_calendar(
+                splits_calendar, 
+                view_mode=view
+            )
+            
+            # Handle export if requested
+            if export:
+                export_formats = []
+                if export == 'json':
+                    export_formats = ['json']
+                elif export == 'csv':
+                    export_formats = ['csv']
+                elif export == 'both':
+                    export_formats = ['json', 'csv']
+                
+                # Determine output directory
+                if output_dir:
+                    export_output_dir = Path(output_dir).expanduser().resolve()
+                elif use_home_dir:
+                    export_output_dir = get_home_export_dir()
+                else:
+                    export_output_dir = get_default_export_dir()
+                
+                # Export the data
+                export_results = export_splits_calendar(
+                    splits_calendar, export_formats, export_output_dir, view
+                )
+                
+                if export_results:
+                    click.echo("\nExported stock splits calendar to:")
+                    for fmt, path in export_results.items():
+                        click.echo(f"  {fmt.upper()}: {path}")
+            
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}", err=True)
+        except Exception as e:
+            logger.exception(f"Unexpected error: {e}")
+            click.echo(f"An unexpected error occurred: {e}", err=True)
