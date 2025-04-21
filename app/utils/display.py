@@ -21,6 +21,7 @@ from app.models.dividend import DividendHistory
 from app.models.etf import ETF
 from app.models.exchange_details import ExchangeSchedule
 from app.models.forex import ForexRate
+from app.models.income_statement import IncomeStatement
 from app.models.splits import SplitHistory
 from app.models.splits_calendar import SplitCalendarEvent, SplitsCalendar
 from app.models.stock import TimeSeries
@@ -3308,3 +3309,396 @@ def _display_splits_summary_view(splits_calendar: 'SplitsCalendar') -> None:
     )
     
     console.print(stats_table)
+
+def display_income_statement(income_statement: IncomeStatement, detailed: bool = False):
+    """
+    Display an income statement in the terminal.
+    
+    Args:
+        income_statement: The IncomeStatement object to display
+        detailed: If True, show more detailed breakdown
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", income_statement.symbol.upper())
+    header.add_row("Fiscal Period:", f"{income_statement.fiscal_period} ({income_statement.fiscal_date})")
+    header.add_row("Currency:", income_statement.currency)
+    
+    console.print(Panel(header, title="Income Statement", expand=False))
+    
+    # Create main table
+    table = Table(show_header=True, header_style="bold")
+    
+    table.add_column("Item", style="dim")
+    table.add_column("Amount", justify="right")
+    
+    if detailed:
+        table.add_column("% of Revenue", justify="right")
+    
+    # Revenue section
+    table.add_row("Revenue", income_statement.revenue.value_str, style="bold green")
+    table.add_row("Cost of Revenue", f"({income_statement.cost_of_revenue.value_str})", 
+                 income_statement.cost_of_revenue.percentage_str if detailed else None,
+                 style="dim" if income_statement.cost_of_revenue.value == 0 else None)
+    
+    gross_margin = (income_statement.gross_profit.value / income_statement.revenue.value * 100) if income_statement.revenue.value != 0 else 0
+    table.add_row("Gross Profit", income_statement.gross_profit.value_str, 
+                 f"{gross_margin:.2f}%" if detailed else None,
+                 style="bold" if income_statement.gross_profit.value > 0 else "bold red")
+    
+    # Operating expenses section
+    table.add_row("", "", style="dim")
+    table.add_row("Operating Expenses:", "", style="bold")
+    
+    for expense in income_statement.operating_expenses:
+        table.add_row(
+            f"  {expense.name}", 
+            f"({expense.value_str})", 
+            expense.percentage_str if detailed else None,
+            style="dim" if expense.value == 0 else None
+        )
+    
+    table.add_row(
+        "Total Operating Expenses", 
+        f"({income_statement.total_operating_expenses.value_str})",
+        income_statement.total_operating_expenses.percentage_str if detailed else None,
+        style="bold"
+    )
+    
+    # Operating income
+    table.add_row("", "", style="dim")
+    operating_margin = (income_statement.operating_income.value / income_statement.revenue.value * 100) if income_statement.revenue.value != 0 else 0
+    table.add_row("Operating Income", income_statement.operating_income.value_str,
+                 f"{operating_margin:.2f}%" if detailed else None,
+                 style="bold" if income_statement.operating_income.value > 0 else "bold red")
+    
+    # Non-operating items (if detailed or significant)
+    if detailed or any(item.value != 0 for item in income_statement.non_operating_items):
+        table.add_row("", "", style="dim")
+        table.add_row("Non-operating Items:", "", style="bold")
+        
+        for item in income_statement.non_operating_items:
+            prefix = "" if item.name == "Interest Expense" else "+" if item.value > 0 else ""
+            value_str = f"({item.value_str})" if item.name == "Interest Expense" else f"{prefix}{item.value_str}"
+            
+            table.add_row(
+                f"  {item.name}", 
+                value_str,
+                style="dim" if item.value == 0 else None
+            )
+    
+    # Bottom line items
+    table.add_row("", "", style="dim")
+    table.add_row("Income Before Tax", income_statement.income_before_tax.value_str, 
+                 style="bold" if income_statement.income_before_tax.value > 0 else "bold red")
+    
+    table.add_row("Income Tax", f"({income_statement.income_tax.value_str})", 
+                 style="dim" if income_statement.income_tax.value == 0 else None)
+    
+    # Net income and margin
+    net_margin = (income_statement.net_income.value / income_statement.revenue.value * 100) if income_statement.revenue.value != 0 else 0
+    table.add_row("Net Income", income_statement.net_income.value_str,
+                 f"{net_margin:.2f}%" if detailed else None,
+                 style="bold green" if income_statement.net_income.value > 0 else "bold red")
+    
+    table.add_row("", "", style="dim")
+    table.add_row("EPS (Basic)", income_statement.eps_basic.value_str, 
+                 style="bold" if income_statement.eps_basic.value > 0 else "bold red")
+    
+    table.add_row("EPS (Diluted)", income_statement.eps_diluted.value_str, 
+                 style="bold" if income_statement.eps_diluted.value > 0 else "bold red")
+    
+    console.print(table)
+
+
+def display_income_statement_comparison(statements: List[IncomeStatement], expense_focus: bool = False):
+    """
+    Display a comparison of multiple income statements side by side.
+    
+    Args:
+        statements: List of IncomeStatement objects to compare
+        expense_focus: If True, focus the display on expense breakdown
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    if not statements:
+        console.print("[bold red]No income statements to display[/bold red]")
+        return
+    
+    # Sort statements by date (most recent first)
+    sorted_statements = sorted(statements, key=lambda s: s.fiscal_date, reverse=True)
+    
+    # Create header
+    symbol = sorted_statements[0].symbol.upper()
+    period_type = sorted_statements[0].fiscal_period
+    
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", symbol)
+    header.add_row("Statement Type:", f"{period_type} Income Statements")
+    header.add_row("Currency:", sorted_statements[0].currency)
+    header.add_row("Periods:", ", ".join(s.fiscal_date for s in sorted_statements))
+    
+    title = "Income Statement Comparison"
+    if expense_focus:
+        title = "Expense Breakdown Comparison"
+        
+    console.print(Panel(header, title=title, expand=False))
+    
+    # Create main comparison table
+    table = Table(show_header=True, header_style="bold")
+    
+    # Add columns - first for line items, then one for each period
+    table.add_column("Item", style="dim")
+    
+    for statement in sorted_statements:
+        # Use fiscal date as column header
+        table.add_column(statement.fiscal_date, justify="right")
+    
+    if expense_focus:
+        # Focus on expenses
+        # First add revenue for context
+        table.add_row("Revenue", *[s.revenue.value_str for s in sorted_statements], style="bold green")
+        table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+        
+        # Then add expense section
+        table.add_row("Expenses:", *["" for _ in sorted_statements], style="bold")
+        
+        # Add cost of revenue
+        table.add_row(
+            "Cost of Revenue", 
+            *[s.cost_of_revenue.value_str for s in sorted_statements]
+        )
+        
+        # Find all unique operating expense names
+        all_expense_names = set()
+        for statement in sorted_statements:
+            all_expense_names.update(expense.name for expense in statement.operating_expenses)
+        
+        # Add each operating expense
+        for expense_name in sorted(all_expense_names):
+            row_values = []
+            
+            for statement in sorted_statements:
+                # Find matching expense in this statement
+                expense = next((e for e in statement.operating_expenses if e.name == expense_name), None)
+                row_values.append(expense.value_str if expense else "N/A")
+            
+            table.add_row(f"{expense_name}", *row_values)
+        
+        # Add total operating expenses
+        table.add_row(
+            "Total Operating Expenses", 
+            *[s.total_operating_expenses.value_str for s in sorted_statements],
+            style="bold"
+        )
+        
+        # Add expense ratios
+        table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+        table.add_row("Expense Ratios (% of Revenue):", *["" for _ in sorted_statements], style="bold")
+        
+        # Cost of revenue percentage
+        table.add_row(
+            "Cost of Revenue %",
+            *[s.cost_of_revenue.percentage_str for s in sorted_statements]
+        )
+        
+        # Operating expenses percentage
+        table.add_row(
+            "Operating Expenses %",
+            *[s.total_operating_expenses.percentage_str for s in sorted_statements]
+        )
+        
+        # Calculate and add tax rate
+        tax_rates = []
+        for statement in sorted_statements:
+            if statement.income_before_tax.value != 0:
+                tax_rate = (statement.income_tax.value / statement.income_before_tax.value) * 100
+                tax_rates.append(f"{tax_rate:.2f}%")
+            else:
+                tax_rates.append("N/A")
+        
+        table.add_row("Effective Tax Rate %", *tax_rates)
+    
+    else:
+        # Standard income statement comparison
+        # Revenue section
+        table.add_row("Revenue", *[s.revenue.value_str for s in sorted_statements], style="bold green")
+        table.add_row("Cost of Revenue", *[f"({s.cost_of_revenue.value_str})" for s in sorted_statements])
+        table.add_row("Gross Profit", *[s.gross_profit.value_str for s in sorted_statements], style="bold")
+        
+        # Calculate and add gross margin
+        gross_margins = []
+        for statement in sorted_statements:
+            if statement.revenue.value != 0:
+                margin = (statement.gross_profit.value / statement.revenue.value) * 100
+                gross_margins.append(f"{margin:.2f}%")
+            else:
+                gross_margins.append("N/A")
+        
+        table.add_row("Gross Margin", *gross_margins, style="bold blue")
+        
+        table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+        
+        # Operating expenses (total)
+        table.add_row(
+            "Operating Expenses", 
+            *[f"({s.total_operating_expenses.value_str})" for s in sorted_statements]
+        )
+        
+        # Operating income
+        table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+        table.add_row(
+            "Operating Income", 
+            *[s.operating_income.value_str for s in sorted_statements], 
+            style="bold"
+        )
+        
+        # Calculate and add operating margin
+        op_margins = []
+        for statement in sorted_statements:
+            if statement.revenue.value != 0:
+                margin = (statement.operating_income.value / statement.revenue.value) * 100
+                op_margins.append(f"{margin:.2f}%")
+            else:
+                op_margins.append("N/A")
+        
+        table.add_row("Operating Margin", *op_margins, style="bold blue")
+        
+        table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+        
+        # Bottom line items
+        table.add_row(
+            "Income Before Tax", 
+            *[s.income_before_tax.value_str for s in sorted_statements]
+        )
+        
+        table.add_row(
+            "Income Tax", 
+            *[f"({s.income_tax.value_str})" for s in sorted_statements]
+        )
+        
+        table.add_row(
+            "Net Income", 
+            *[s.net_income.value_str for s in sorted_statements], 
+            style="bold green"
+        )
+        
+        # Calculate and add net margin
+        net_margins = []
+        for statement in sorted_statements:
+            if statement.revenue.value != 0:
+                margin = (statement.net_income.value / statement.revenue.value) * 100
+                net_margins.append(f"{margin:.2f}%")
+            else:
+                net_margins.append("N/A")
+        
+        table.add_row("Net Margin", *net_margins, style="bold blue")
+        
+        table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+        
+        # Per share data
+        table.add_row(
+            "EPS (Diluted)", 
+            *[s.eps_diluted.value_str for s in sorted_statements], 
+            style="bold"
+        )
+    
+    console.print(table)
+
+
+def display_expense_breakdown(income_statement: IncomeStatement):
+    """
+    Display a focused breakdown of expenses from the income statement.
+    
+    Args:
+        income_statement: The IncomeStatement object
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.progress import Progress, BarColumn, TextColumn, ProgressColumn
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", income_statement.symbol.upper())
+    header.add_row("Period:", f"{income_statement.fiscal_period} ({income_statement.fiscal_date})")
+    header.add_row("Currency:", income_statement.currency)
+    header.add_row("Revenue:", income_statement.revenue.value_str)
+    
+    console.print(Panel(header, title="Expense Breakdown", expand=False))
+    
+    # Get all expenses
+    expenses = income_statement.get_all_expenses()
+    
+    # Create table for expense breakdown
+    table = Table(show_header=True, header_style="bold")
+    
+    table.add_column("Expense Category", style="dim")
+    table.add_column("Amount", justify="right")
+    table.add_column("% of Revenue", justify="right")
+    table.add_column("Proportion", justify="left", width=30)
+    
+    # Sort expenses by value (highest first)
+    sorted_expenses = sorted(expenses, key=lambda e: abs(e.value), reverse=True)
+    
+    # Find maximum expense for proportional bar scaling
+    max_expense = max(abs(e.value) for e in sorted_expenses) if sorted_expenses else 0
+    
+    for expense in sorted_expenses:
+        # Skip if zero
+        if expense.value == 0:
+            continue
+            
+        # Calculate proportional width for bar (max 20 chars)
+        if max_expense > 0:
+            bar_width = int(20 * abs(expense.value) / max_expense)
+            bar = "█" * bar_width
+        else:
+            bar = ""
+        
+        table.add_row(
+            expense.name,
+            expense.value_str,
+            expense.percentage_str,
+            bar
+        )
+    
+    console.print(table)
+    
+    # If we have multiple operating expenses, show a summary of their relative proportions
+    op_expenses = [e for e in income_statement.operating_expenses if e.value != 0]
+    if len(op_expenses) > 1:
+        console.print("\n[bold]Operating Expense Distribution:[/bold]")
+        
+        op_total = sum(abs(e.value) for e in op_expenses)
+        
+        # Create proportional distribution
+        for expense in sorted(op_expenses, key=lambda e: abs(e.value), reverse=True):
+            percentage = (abs(expense.value) / op_total * 100) if op_total > 0 else 0
+            bar_width = int(50 * percentage / 100) if percentage > 0 else 0
+            bar = "█" * bar_width
+            
+            console.print(
+                f"{expense.name}: {percentage:.1f}% {bar}"
+            )

@@ -13,6 +13,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from app.api.twelve_data import TwelveDataAPIError, client
+# from app.main import cli
 from app.models.bond import Bond
 from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF
@@ -4693,3 +4694,264 @@ def splits_calendar_command(start_date: Optional[str], end_date: Optional[str],
         except Exception as e:
             logger.exception(f"Unexpected error: {e}")
             click.echo(f"An unexpected error occurred: {e}", err=True)
+
+@stock.group(name="income-statement")
+def income_statement_group():
+    """Commands for retrieving company income statements."""
+    pass
+
+
+@income_statement_group.command(name="get")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=1,
+              help="Number of periods to retrieve (default: 1, max: 20)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed income statement")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export income statement to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_income_statement_command(symbol, period, count, detailed, export, output_dir, use_home_dir):
+    """
+    Get income statement for a company.
+    
+    Retrieves the income statement for a given company symbol, showing revenue, 
+    expenses, and profitability metrics.
+    
+    Examples:
+        stockcli income-statement get AAPL --period annual
+        stockcli income-statement get MSFT --period quarter --count 4 --detailed
+    """
+    from app.models.income_statement import IncomeStatement
+    from app.utils.display import display_income_statement
+    from app.utils.export import export_income_statement, get_default_export_dir, get_home_export_dir
+    
+    
+    with create_progress_spinner(f"Fetching {period} income statement for {symbol}..."):
+        try:
+            response = client.get_income_statement(symbol, period, count)
+            income_statements = []
+            
+            for item in response.get('income_statement', []):
+                income_statement = IncomeStatement.from_api_response(item)
+                income_statements.append(income_statement)
+            
+            if not income_statements:
+                click.echo(f"No income statement data available for {symbol}")
+                return
+        
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display the most recent statement
+    most_recent = income_statements[0] if income_statements else None
+    if most_recent:
+        display_income_statement(most_recent, detailed)
+        
+        # Export if requested
+        if export:
+            # Determine export formats
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+                
+            # Determine output directory
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+                
+            export_results = export_income_statement(most_recent, export_formats, export_output_dir)
+            
+            if export_results:
+                click.echo("\nExported income statement to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@income_statement_group.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=4,
+              help="Number of periods to compare (default: 4, max: 20)")
+@click.option("--expenses", "-e", is_flag=True, 
+              help="Focus on expense breakdown comparison")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_income_statements_command(symbol, period, count, expenses, export, output_dir, use_home_dir):
+    """
+    Compare income statements across multiple periods.
+    
+    Display income statements side-by-side to analyze trends in revenue, 
+    expenses, and profitability over time.
+    
+    Examples:
+        stockcli income-statement compare AAPL
+        stockcli income-statement compare MSFT --period quarter --count 8 --expenses
+    """
+    from app.models.income_statement import IncomeStatement
+    from app.utils.display import display_income_statement_comparison
+    from app.utils.export import export_income_statements, get_default_export_dir, get_home_export_dir
+        
+    with create_progress_spinner(f"Fetching {period} income statements for {symbol}..."):
+        try:
+            response = client.get_income_statement(symbol, period, count)
+            income_statements = []
+            
+            for item in response.get('income_statement', []):
+                income_statement = IncomeStatement.from_api_response(item)
+                income_statements.append(income_statement)
+            
+            if not income_statements:
+                click.echo(f"No income statement data available for {symbol}")
+                return
+                
+            # Sort by date (most recent first)
+            income_statements.sort(key=lambda s: s.fiscal_date, reverse=True)
+        
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display comparison
+    display_income_statement_comparison(income_statements, expense_focus=expenses)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_income_statements(income_statements, export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported income statements to:")
+            for fmt, path in export_results.items():
+                if isinstance(path, list):
+                    click.echo(f"  {fmt.upper()}: Multiple files in {Path(path[0]).parent}")
+                else:
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@income_statement_group.command(name="expenses")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--fiscal-date", "-d", 
+              help="Specific fiscal date (e.g. '2023-09-30'). Uses most recent if not specified.")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export expense breakdown to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def expense_breakdown_command(symbol, period, fiscal_date, export, output_dir, use_home_dir):
+    """
+    Show detailed expense breakdown for a company.
+    
+    Analyzes and visualizes the expense structure of a company, showing
+    relative proportions of different expense categories.
+    
+    Examples:
+        stockcli income-statement expenses AAPL
+        stockcli income-statement expenses MSFT --period quarter --fiscal-date 2023-03-31
+    """
+    from app.models.income_statement import IncomeStatement
+    from app.utils.display import display_expense_breakdown
+    from app.utils.export import export_expense_breakdown, get_default_export_dir, get_home_export_dir
+    
+    
+    with create_progress_spinner(f"Fetching {period} income statement for {symbol}..."):
+        try:
+            # We'll fetch the most recent statements (or more if fiscal date is specified)
+            fetch_count = 10 if fiscal_date else 1
+            response = client.get_income_statement(symbol, period, fetch_count)
+            income_statements = []
+            
+            for item in response.get('income_statement', []):
+                income_statement = IncomeStatement.from_api_response(item)
+                income_statements.append(income_statement)
+            
+            if not income_statements:
+                click.echo(f"No income statement data available for {symbol}")
+                return
+                
+            # Sort by date (most recent first)
+            income_statements.sort(key=lambda s: s.fiscal_date, reverse=True)
+            
+            # If fiscal date specified, find matching statement
+            target_statement = None
+            if fiscal_date:
+                target_statement = next((s for s in income_statements if s.fiscal_date == fiscal_date), None)
+                if not target_statement:
+                    click.echo(f"No income statement found for fiscal date {fiscal_date}")
+                    click.echo("Available fiscal dates:")
+                    for s in income_statements:
+                        click.echo(f"  {s.fiscal_date}")
+                    return
+            else:
+                # Use most recent statement
+                target_statement = income_statements[0]
+        
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display expense breakdown
+    display_expense_breakdown(target_statement)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_expense_breakdown(target_statement, export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported expense breakdown to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+

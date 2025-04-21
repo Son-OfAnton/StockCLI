@@ -2122,6 +2122,33 @@ class TwelveDataClient:
             }
         
         return response
+    
+    def get_income_statement(self, symbol: str, period: str = 'annual', last_n: int = 4) -> Dict:
+        """
+        Fetch income statement data for a company.
+        
+        Args:
+            symbol: The stock symbol
+            period: 'annual' or 'quarter'
+            last_n: Number of periods to retrieve (max 20)
+        
+        Returns:
+            Dict containing income statement data
+        """
+        self.logger.debug(f"Fetching {period} income statement for {symbol} (last {last_n} periods)")
+        
+        params = {
+            'symbol': symbol,
+            'period': period,
+            'outputsize': min(last_n, 20)  # API limit is 20
+        }
+        
+        response = self._make_request('income_statement', params)
+        
+        if not response.get('income_statement'):
+            raise TwelveDataAPIError(f"No income statement data available for {symbol}")
+        
+        return response
 
 # Initialize the TwelveData client
 client = TwelveDataClient()

@@ -8,7 +8,7 @@ import sys
 import logging
 from pathlib import Path
 import click
-from app.cli.commands import stock, fetch_and_display_quotes, refresh_quotes, export_last as export_last_quotes
+from app.cli.commands import compare_income_statements_command, expense_breakdown_command, get_income_statement_command, stock, fetch_and_display_quotes, refresh_quotes, export_last as export_last_quotes
 from app.utils.export import get_default_export_dir, get_home_export_dir
 
 # Configure logging
@@ -1548,6 +1548,95 @@ def splits_calendar_shortcut(start_date, end_date, range, symbol, exchange, view
         view=view,
         forward_only=forward_only,
         reverse_only=reverse_only,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+# Add shortcut at top level for easier access
+@cli.group(name="income-statement")
+def income_statement_shortcut():
+    """Shortcut for 'stock income-statement' commands."""
+    pass
+
+
+@income_statement_shortcut.command(name="get")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=1,
+              help="Number of periods to retrieve (default: 1, max: 20)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed income statement")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export income statement to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_income_statement_shortcut(symbol, period, count, detailed, export, output_dir, use_home_dir):
+    """Get income statement for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_income_statement_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@income_statement_shortcut.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=4,
+              help="Number of periods to compare (default: 4, max: 20)")
+@click.option("--expenses", "-e", is_flag=True, 
+              help="Focus on expense breakdown comparison")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_income_statements_shortcut(symbol, period, count, expenses, export, output_dir, use_home_dir):
+    """Compare income statements across multiple periods."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        compare_income_statements_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        expenses=expenses,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@income_statement_shortcut.command(name="expenses")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--fiscal-date", "-d", 
+              help="Specific fiscal date (e.g. '2023-09-30'). Uses most recent if not specified.")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export expense breakdown to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def expense_breakdown_shortcut(symbol, period, fiscal_date, export, output_dir, use_home_dir):
+    """Show detailed expense breakdown for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        expense_breakdown_command,
+        symbol=symbol,
+        period=period,
+        fiscal_date=fiscal_date,
         export=export,
         output_dir=output_dir,
         use_home_dir=use_home_dir
