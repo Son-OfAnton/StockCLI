@@ -136,6 +136,71 @@ After installation, you can explore the available commands:
   stockcli stock stop
   ```
 
+## Available Commands
+
+- **stock quote**  
+  Fetch current stock quotes for one or more symbols with options for auto-refresh, detailed view, and export.
+
+- **stock export-last**  
+  Export the most recently fetched quotes to JSON, CSV, or both.
+
+- **stock symbols list**  
+  List available financial symbols with optional filtering (by exchange, type, country, search, etc.).
+
+- **stock symbols types**  
+  List available symbol types.
+
+- **stock symbols exchanges**  
+  Display exchanges (along with an option to export results).
+
+- **stock symbols exchange-details** or **trading-hours**  
+  Get detailed exchange information including trading hours for a given exchange code.
+
+- **stock symbols search**  
+  Search for symbols matching a query.
+
+- **stock time-series**  
+  Fetch historical price and meta data for a specified symbol with options for interval, date range, and export.
+
+- **stock forex rate**  
+  Get the real-time exchange rate for a currency pair (e.g., EUR/USD).
+
+- **stock latest-quote**  
+  Retrieve the most recent quote for a specified symbol, with options for a simplified view and auto-refresh.
+
+- **stock eod**  
+  Obtain end-of-day price data for a specific symbol.
+
+- **stock gainers**  
+  Show top gaining stocks for the day.
+
+- **stock losers**  
+  Show top losing stocks for the day.
+
+- **stock mutual-funds list**  
+  List available mutual funds with detailed information and filtering options.
+
+- **stock mutual-funds info**  
+  Get detailed profile information for a specific mutual fund.
+
+- **stock mutual-funds families**  
+  List available fund families.
+
+- **stock mutual-funds family**  
+  Get detailed information about a specific fund family.
+
+- **stock mutual-funds types**  
+  List available mutual fund types.
+
+- **stock mutual-funds type**  
+  Get detailed information about a specific mutual fund type.
+
+- **stock company profile**  
+  Retrieve detailed company profile information for a given ticker symbol.
+
+**Shortcut Commands:**  
+Additionally, shortcut commands are provided for ease of use (e.g., `quote`, `export-last`, `symbols`, `forex`, `crypto`, `funds`, `bonds`, `etfs`, `commodities`, `mutual-funds`, and `company` with their corresponding subcommands).
+
 ## Project Structure
 
 Below is the current project structure:
