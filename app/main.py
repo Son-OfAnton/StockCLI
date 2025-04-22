@@ -9,7 +9,9 @@ import logging
 from pathlib import Path
 import click
 from app.cli.commands import compare_income_statements_command, expense_breakdown_command, get_income_statement_command, stock, fetch_and_display_quotes, refresh_quotes, export_last as export_last_quotes
-from app.utils.export import get_default_export_dir, get_home_export_dir
+from app.utils.display import create_progress_spinner
+from app.utils.export import generate_export_filename, get_default_export_dir, get_home_export_dir
+from app.api.twelve_data import TwelveDataAPIError, client
 
 # Configure logging
 logging.basicConfig(
@@ -1515,15 +1517,15 @@ def compare_stock_splits_shortcut(symbols, years, export, output_dir, use_home_d
 
 
 @splits_shortcut.command(name="calendar")
-@click.option("--start-date", "-s", 
+@click.option("--start-date", "-s",
               help="Start date in YYYY-MM-DD format (required unless --range is specified)")
-@click.option("--end-date", "-e", 
+@click.option("--end-date", "-e",
               help="End date in YYYY-MM-DD format (required unless --range is specified)")
 @click.option("--range", "-r", type=click.Choice(['today', 'week', 'month', 'quarter', 'year']),
               help="Predefined date range (alternative to start/end dates)")
 @click.option("--symbol", help="Filter by symbol")
 @click.option("--exchange", help="Filter by exchange")
-@click.option("--view", "-v", type=click.Choice(['calendar', 'list', 'summary']), 
+@click.option("--view", "-v", type=click.Choice(['calendar', 'list', 'summary']),
               default='calendar', help="View mode (default: calendar)")
 @click.option("--forward-only", is_flag=True, help="Show only forward splits")
 @click.option("--reverse-only", is_flag=True, help="Show only reverse splits")
@@ -1534,7 +1536,7 @@ def compare_stock_splits_shortcut(symbols, years, export, output_dir, use_home_d
 @click.option("--use-home-dir", is_flag=True,
               help="Save exports to user's home directory instead of project directory")
 def splits_calendar_shortcut(start_date, end_date, range, symbol, exchange, view,
-                           forward_only, reverse_only, export, output_dir, use_home_dir):
+                             forward_only, reverse_only, export, output_dir, use_home_dir):
     """Get stock splits calendar for a specified date range."""
     from app.cli.commands import splits_calendar_command
     ctx = click.get_current_context()
@@ -1554,6 +1556,8 @@ def splits_calendar_shortcut(start_date, end_date, range, symbol, exchange, view
     )
 
 # Add shortcut at top level for easier access
+
+
 @cli.group(name="income-statement")
 def income_statement_shortcut():
     """Shortcut for 'stock income-statement' commands."""
@@ -1594,7 +1598,7 @@ def get_income_statement_shortcut(symbol, period, count, detailed, export, outpu
               help="Period type (annual or quarterly)")
 @click.option("--count", "-c", type=int, default=4,
               help="Number of periods to compare (default: 4, max: 20)")
-@click.option("--expenses", "-e", is_flag=True, 
+@click.option("--expenses", "-e", is_flag=True,
               help="Focus on expense breakdown comparison")
 @click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
               help="Export comparison data to file format")
@@ -1621,7 +1625,7 @@ def compare_income_statements_shortcut(symbol, period, count, expenses, export, 
 @click.argument("symbol", required=True)
 @click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
               help="Period type (annual or quarterly)")
-@click.option("--fiscal-date", "-d", 
+@click.option("--fiscal-date", "-d",
               help="Specific fiscal date (e.g. '2023-09-30'). Uses most recent if not specified.")
 @click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
               help="Export expense breakdown to file format")
@@ -1637,6 +1641,2094 @@ def expense_breakdown_shortcut(symbol, period, fiscal_date, export, output_dir, 
         symbol=symbol,
         period=period,
         fiscal_date=fiscal_date,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@stock.group(name="balance-sheet")
+def balance_sheet_group():
+    """Commands for retrieving company balance sheets."""
+    pass
+
+
+@balance_sheet_group.command(name="get")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=1,
+              help="Number of periods to retrieve (default: 1, max: 20)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed balance sheet with percentages")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export balance sheet to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_balance_sheet_command(symbol, period, count, detailed, export, output_dir, use_home_dir):
+    """
+    Get balance sheet for a company.
+
+    Retrieves the balance sheet for a given company symbol, showing assets,
+    liabilities, and shareholders' equity.
+
+    Examples:
+        stockcli balance-sheet get AAPL --period annual
+        stockcli balance-sheet get MSFT --period quarter --count 1 --detailed
+    """
+    from app.models.balance_sheet import BalanceSheet
+    from app.utils.display import display_balance_sheet
+    from app.utils.export import export_balance_sheet, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} balance sheet for {symbol}..."):
+        try:
+            response = client.get_balance_sheet(symbol, period, count)
+            balance_sheets = []
+
+            for item in response.get('balance_sheet', []):
+                balance_sheet = BalanceSheet.from_api_response(item)
+                balance_sheets.append(balance_sheet)
+
+            if not balance_sheets:
+                click.echo(f"No balance sheet data available for {symbol}")
+                return
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display the most recent statement
+    most_recent = balance_sheets[0] if balance_sheets else None
+    if most_recent:
+        display_balance_sheet(most_recent, detailed)
+
+        # Export if requested
+        if export:
+            # Determine export formats
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+
+            export_results = export_balance_sheet(
+                most_recent, export_formats, export_output_dir)
+
+            if export_results:
+                click.echo("\nExported balance sheet to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@balance_sheet_group.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=4,
+              help="Number of periods to compare (default: 4, max: 20)")
+@click.option("--focus", "-f", type=click.Choice(['full', 'assets', 'liabilities', 'equity', 'ratios']),
+              default='full', help="Focus on specific section (default: full balance sheet)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_balance_sheets_command(symbol, period, count, focus, export, output_dir, use_home_dir):
+    """
+    Compare balance sheets across multiple periods.
+
+    Display balance sheets side-by-side to analyze trends in assets,
+    liabilities, and equity over time.
+
+    Examples:
+        stockcli balance-sheet compare AAPL
+        stockcli balance-sheet compare MSFT --period quarter --count 8 --focus assets
+    """
+    from app.models.balance_sheet import BalanceSheet
+    from app.utils.display import display_balance_sheet_comparison
+    from app.utils.export import export_balance_sheets, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} balance sheets for {symbol}..."):
+        try:
+            response = client.get_balance_sheet(symbol, period, count)
+            balance_sheets = []
+
+            for item in response.get('balance_sheet', []):
+                balance_sheet = BalanceSheet.from_api_response(item)
+                balance_sheets.append(balance_sheet)
+
+            if not balance_sheets:
+                click.echo(f"No balance sheet data available for {symbol}")
+                return
+
+            # Sort by date (most recent first)
+            balance_sheets.sort(key=lambda s: s.fiscal_date, reverse=True)
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display comparison
+    display_balance_sheet_comparison(balance_sheets, focus=focus)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        export_results = export_balance_sheets(
+            balance_sheets, export_formats, export_output_dir)
+
+        if export_results:
+            click.echo("\nExported balance sheets to:")
+            for fmt, path in export_results.items():
+                if isinstance(path, list):
+                    click.echo(
+                        f"  {fmt.upper()}: Multiple files in {Path(path[0]).parent}")
+                else:
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@balance_sheet_group.command(name="structure")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--fiscal-date", "-d",
+              help="Specific fiscal date (e.g. '2023-09-30'). Uses most recent if not specified.")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export structure breakdown to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def balance_sheet_structure_command(symbol, period, fiscal_date, export, output_dir, use_home_dir):
+    """
+    Show detailed structure breakdown of a company's balance sheet.
+
+    Analyzes and visualizes the balance sheet structure, showing the relative
+    proportions of assets, liabilities, and equity.
+
+    Examples:
+        stockcli balance-sheet structure AAPL
+        stockcli balance-sheet structure MSFT --period quarter --fiscal-date 2023-03-31
+    """
+    from app.models.balance_sheet import BalanceSheet
+    from app.utils.display import display_balance_sheet_structure
+    from app.utils.export import export_balance_sheet_summary, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} balance sheet for {symbol}..."):
+        try:
+            # We'll fetch the most recent statements (or more if fiscal date is specified)
+            fetch_count = 10 if fiscal_date else 1
+            response = client.get_balance_sheet(symbol, period, fetch_count)
+            balance_sheets = []
+
+            for item in response.get('balance_sheet', []):
+                balance_sheet = BalanceSheet.from_api_response(item)
+                balance_sheets.append(balance_sheet)
+
+            if not balance_sheets:
+                click.echo(f"No balance sheet data available for {symbol}")
+                return
+
+            # Sort by date (most recent first)
+            balance_sheets.sort(key=lambda s: s.fiscal_date, reverse=True)
+
+            # If fiscal date specified, find matching statement
+            target_statement = None
+            if fiscal_date:
+                target_statement = next(
+                    (s for s in balance_sheets if s.fiscal_date == fiscal_date), None)
+                if not target_statement:
+                    click.echo(
+                        f"No balance sheet found for fiscal date {fiscal_date}")
+                    click.echo("Available fiscal dates:")
+                    for s in balance_sheets:
+                        click.echo(f"  {s.fiscal_date}")
+                    return
+            else:
+                # Use most recent statement
+                target_statement = balance_sheets[0]
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display structure breakdown
+    display_balance_sheet_structure(target_statement)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        export_results = export_balance_sheet_summary(
+            target_statement, export_formats, export_output_dir)
+
+        if export_results:
+            click.echo("\nExported balance sheet structure summary to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+# Add shortcut at top level for easier access
+@cli.group(name="balance-sheet")
+def balance_sheet_shortcut():
+    """Shortcut for 'stock balance-sheet' commands."""
+    pass
+
+
+@balance_sheet_shortcut.command(name="get")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=1,
+              help="Number of periods to retrieve (default: 1, max: 20)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed balance sheet with percentages")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export balance sheet to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_balance_sheet_shortcut(symbol, period, count, detailed, export, output_dir, use_home_dir):
+    """Get balance sheet for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_balance_sheet_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@balance_sheet_shortcut.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=4,
+              help="Number of periods to compare (default: 4, max: 20)")
+@click.option("--focus", "-f", type=click.Choice(['full', 'assets', 'liabilities', 'equity', 'ratios']),
+              default='full', help="Focus on specific section (default: full balance sheet)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_balance_sheets_shortcut(symbol, period, count, focus, export, output_dir, use_home_dir):
+    """Compare balance sheets across multiple periods."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        compare_balance_sheets_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        focus=focus,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@balance_sheet_shortcut.command(name="structure")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--fiscal-date", "-d",
+              help="Specific fiscal date (e.g. '2023-09-30'). Uses most recent if not specified.")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export structure breakdown to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def balance_sheet_structure_shortcut(symbol, period, fiscal_date, export, output_dir, use_home_dir):
+    """Show detailed structure breakdown of a company's balance sheet."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        balance_sheet_structure_command,
+        symbol=symbol,
+        period=period,
+        fiscal_date=fiscal_date,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@stock.group(name="consolidated-balance-sheet")
+def consolidated_balance_sheet_group():
+    """Commands for retrieving company consolidated balance sheets."""
+    pass
+
+
+@consolidated_balance_sheet_group.command(name="get")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=1,
+              help="Number of periods to retrieve (default: 1, max: 20)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed balance sheet with percentages")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export balance sheet to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_consolidated_balance_sheet_command(symbol, period, count, detailed, export, output_dir, use_home_dir):
+    """
+    Get consolidated balance sheet for a company.
+
+    Retrieves the consolidated balance sheet for a given company symbol, showing assets,
+    liabilities, and shareholders' equity across all subsidiaries.
+
+    Examples:
+        stockcli consolidated-balance-sheet get AAPL --period annual
+        stockcli consolidated-balance-sheet get MSFT --period quarter --count 1 --detailed
+    """
+    from app.models.balance_sheet import BalanceSheet
+    from app.utils.display import display_balance_sheet
+    from app.utils.export import export_balance_sheet, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} consolidated balance sheet for {symbol}..."):
+        try:
+            response = client.get_consolidated_balance_sheet(
+                symbol, period, count)
+            balance_sheets = []
+
+            for item in response.get('balance_sheet', []):
+                balance_sheet = BalanceSheet.from_api_response(item)
+                balance_sheets.append(balance_sheet)
+
+            if not balance_sheets:
+                click.echo(
+                    f"No consolidated balance sheet data available for {symbol}")
+                return
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display the most recent statement
+    most_recent = balance_sheets[0] if balance_sheets else None
+    if most_recent:
+        # Add a note that this is a consolidated balance sheet
+        click.echo(
+            f"[bold]Consolidated Balance Sheet[/bold] - Includes data from all subsidiaries")
+        display_balance_sheet(most_recent, detailed)
+
+        # Export if requested
+        if export:
+            # Determine export formats
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+
+            # Generate special filename to indicate consolidated
+            base_filename = generate_export_filename(
+                'consolidated_balance_sheet',
+                [symbol],
+                additional_parts=[period, most_recent.fiscal_date]
+            )
+
+            export_results = export_balance_sheet(
+                most_recent, export_formats, export_output_dir, base_filename)
+
+            if export_results:
+                click.echo("\nExported consolidated balance sheet to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@consolidated_balance_sheet_group.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=4,
+              help="Number of periods to compare (default: 4, max: 20)")
+@click.option("--focus", "-f", type=click.Choice(['full', 'assets', 'liabilities', 'equity', 'ratios']),
+              default='full', help="Focus on specific section (default: full balance sheet)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_consolidated_balance_sheets_command(symbol, period, count, focus, export, output_dir, use_home_dir):
+    """
+    Compare consolidated balance sheets across multiple periods.
+
+    Display consolidated balance sheets side-by-side to analyze trends in assets,
+    liabilities, and equity over time.
+
+    Examples:
+        stockcli consolidated-balance-sheet compare AAPL
+        stockcli consolidated-balance-sheet compare MSFT --period quarter --count 8 --focus assets
+    """
+    from app.models.balance_sheet import BalanceSheet
+    from app.utils.display import display_balance_sheet_comparison
+    from app.utils.export import export_balance_sheets, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} consolidated balance sheets for {symbol}..."):
+        try:
+            response = client.get_consolidated_balance_sheet(
+                symbol, period, count)
+            balance_sheets = []
+
+            for item in response.get('balance_sheet', []):
+                balance_sheet = BalanceSheet.from_api_response(item)
+                balance_sheets.append(balance_sheet)
+
+            if not balance_sheets:
+                click.echo(
+                    f"No consolidated balance sheet data available for {symbol}")
+                return
+
+            # Sort by date (most recent first)
+            balance_sheets.sort(key=lambda s: s.fiscal_date, reverse=True)
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display comparison
+    click.echo(
+        f"[bold]Consolidated Balance Sheet Comparison[/bold] - Includes data from all subsidiaries")
+    display_balance_sheet_comparison(balance_sheets, focus=focus)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        # Generate special filename for consolidated data
+        date_range = f"{balance_sheets[-1].fiscal_date}_to_{balance_sheets[0].fiscal_date}"
+        base_filename = generate_export_filename(
+            'consolidated_balance_sheets',
+            [symbol],
+            additional_parts=[period, date_range]
+        )
+
+        export_results = export_balance_sheets(
+            balance_sheets, export_formats, export_output_dir, base_filename)
+
+        if export_results:
+            click.echo("\nExported consolidated balance sheets to:")
+            for fmt, path in export_results.items():
+                if isinstance(path, list):
+                    click.echo(
+                        f"  {fmt.upper()}: Multiple files in {Path(path[0]).parent}")
+                else:
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@consolidated_balance_sheet_group.command(name="structure")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--fiscal-date", "-d",
+              help="Specific fiscal date (e.g. '2023-09-30'). Uses most recent if not specified.")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export structure breakdown to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def consolidated_balance_sheet_structure_command(symbol, period, fiscal_date, export, output_dir, use_home_dir):
+    """
+    Show detailed structure breakdown of a company's consolidated balance sheet.
+
+    Analyzes and visualizes the consolidated balance sheet structure, showing the relative
+    proportions of assets, liabilities, and equity across all subsidiaries.
+
+    Examples:
+        stockcli consolidated-balance-sheet structure AAPL
+        stockcli consolidated-balance-sheet structure MSFT --period quarter --fiscal-date 2023-03-31
+    """
+    from app.models.balance_sheet import BalanceSheet
+    from app.utils.display import display_balance_sheet_structure
+    from app.utils.export import export_balance_sheet_summary, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} consolidated balance sheet for {symbol}..."):
+        try:
+            # We'll fetch the most recent statements (or more if fiscal date is specified)
+            fetch_count = 10 if fiscal_date else 1
+            response = client.get_consolidated_balance_sheet(
+                symbol, period, fetch_count)
+            balance_sheets = []
+
+            for item in response.get('balance_sheet', []):
+                balance_sheet = BalanceSheet.from_api_response(item)
+                balance_sheets.append(balance_sheet)
+
+            if not balance_sheets:
+                click.echo(
+                    f"No consolidated balance sheet data available for {symbol}")
+                return
+
+            # Sort by date (most recent first)
+            balance_sheets.sort(key=lambda s: s.fiscal_date, reverse=True)
+
+            # If fiscal date specified, find matching statement
+            target_statement = None
+            if fiscal_date:
+                target_statement = next(
+                    (s for s in balance_sheets if s.fiscal_date == fiscal_date), None)
+                if not target_statement:
+                    click.echo(
+                        f"No consolidated balance sheet found for fiscal date {fiscal_date}")
+                    click.echo("Available fiscal dates:")
+                    for s in balance_sheets:
+                        click.echo(f"  {s.fiscal_date}")
+                    return
+            else:
+                # Use most recent statement
+                target_statement = balance_sheets[0]
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display structure breakdown
+    click.echo(
+        f"[bold]Consolidated Balance Sheet Structure[/bold] - Includes data from all subsidiaries")
+    display_balance_sheet_structure(target_statement)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        # Generate special filename for consolidated data
+        base_filename = generate_export_filename(
+            'consolidated_balance_sheet_summary',
+            [symbol],
+            additional_parts=[period, target_statement.fiscal_date]
+        )
+
+        export_results = export_balance_sheet_summary(
+            target_statement, export_formats, export_output_dir, base_filename)
+
+        if export_results:
+            click.echo(
+                "\nExported consolidated balance sheet structure summary to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+# Add shortcut at top level for easier access
+@cli.group(name="consolidated-balance-sheet")
+def consolidated_balance_sheet_shortcut():
+    """Shortcut for 'stock consolidated-balance-sheet' commands."""
+    pass
+
+
+@consolidated_balance_sheet_shortcut.command(name="get")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=1,
+              help="Number of periods to retrieve (default: 1, max: 20)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed balance sheet with percentages")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export balance sheet to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_consolidated_balance_sheet_shortcut(symbol, period, count, detailed, export, output_dir, use_home_dir):
+    """Get consolidated balance sheet for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_consolidated_balance_sheet_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@consolidated_balance_sheet_shortcut.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=4,
+              help="Number of periods to compare (default: 4, max: 20)")
+@click.option("--focus", "-f", type=click.Choice(['full', 'assets', 'liabilities', 'equity', 'ratios']),
+              default='full', help="Focus on specific section (default: full balance sheet)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_consolidated_balance_sheets_shortcut(symbol, period, count, focus, export, output_dir, use_home_dir):
+    """Compare consolidated balance sheets across multiple periods."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        compare_consolidated_balance_sheets_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        focus=focus,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@consolidated_balance_sheet_shortcut.command(name="structure")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--fiscal-date", "-d",
+              help="Specific fiscal date (e.g. '2023-09-30'). Uses most recent if not specified.")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export structure breakdown to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def consolidated_balance_sheet_structure_shortcut(symbol, period, fiscal_date, export, output_dir, use_home_dir):
+    """Show detailed structure breakdown of a company's consolidated balance sheet."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        consolidated_balance_sheet_structure_command,
+        symbol=symbol,
+        period=period,
+        fiscal_date=fiscal_date,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@stock.group(name="cash-flow")
+def cash_flow_group():
+    """Commands for retrieving company cash flow statements."""
+    pass
+
+
+@cash_flow_group.command(name="get")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=1,
+              help="Number of periods to retrieve (default: 1, max: 20)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed cash flow statement")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export cash flow to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_cash_flow_command(symbol, period, count, detailed, export, output_dir, use_home_dir):
+    """
+    Get cash flow statement for a company.
+
+    Retrieves the cash flow statement for a given company symbol, showing inflows and outflows
+    of cash from operating, investing, and financing activities.
+
+    Examples:
+        stockcli cash-flow get AAPL --period annual
+        stockcli cash-flow get MSFT --period quarter --count 1 --detailed
+    """
+    from app.models.cash_flow import CashFlow
+    from app.utils.display import display_cash_flow
+    from app.utils.export import export_cash_flow, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} cash flow statement for {symbol}..."):
+        try:
+            response = client.get_cash_flow(symbol, period, count)
+            cash_flows = []
+
+            for item in response.get('cash_flow', []):
+                cash_flow = CashFlow.from_api_response(item)
+                cash_flows.append(cash_flow)
+
+            if not cash_flows:
+                click.echo(f"No cash flow data available for {symbol}")
+                return
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display the most recent statement
+    most_recent = cash_flows[0] if cash_flows else None
+    if most_recent:
+        display_cash_flow(most_recent, detailed)
+
+        # Export if requested
+        if export:
+            # Determine export formats
+            export_formats = []
+            if export == 'json':
+                export_formats = ['json']
+            elif export == 'csv':
+                export_formats = ['csv']
+            elif export == 'both':
+                export_formats = ['json', 'csv']
+
+            # Determine output directory
+            if output_dir:
+                export_output_dir = Path(output_dir).expanduser().resolve()
+            elif use_home_dir:
+                export_output_dir = get_home_export_dir()
+            else:
+                export_output_dir = get_default_export_dir()
+
+            export_results = export_cash_flow(
+                most_recent, export_formats, export_output_dir)
+
+            if export_results:
+                click.echo("\nExported cash flow statement to:")
+                for fmt, path in export_results.items():
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@cash_flow_group.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=4,
+              help="Number of periods to compare (default: 4, max: 20)")
+@click.option("--focus", "-f", type=click.Choice(['full', 'operating', 'investing', 'financing', 'summary']),
+              default='full', help="Focus on specific section (default: full cash flow)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_cash_flows_command(symbol, period, count, focus, export, output_dir, use_home_dir):
+    """
+    Compare cash flow statements across multiple periods.
+
+    Display cash flow statements side-by-side to analyze trends in cash inflows
+    and outflows over time.
+
+    Examples:
+        stockcli cash-flow compare AAPL
+        stockcli cash-flow compare MSFT --period quarter --count 8 --focus operating
+    """
+    from app.models.cash_flow import CashFlow
+    from app.utils.display import display_cash_flow_comparison
+    from app.utils.export import export_cash_flows, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} cash flow statements for {symbol}..."):
+        try:
+            response = client.get_cash_flow(symbol, period, count)
+            cash_flows = []
+
+            for item in response.get('cash_flow', []):
+                cash_flow = CashFlow.from_api_response(item)
+                cash_flows.append(cash_flow)
+
+            if not cash_flows:
+                click.echo(f"No cash flow data available for {symbol}")
+                return
+
+            # Sort by date (most recent first)
+            cash_flows.sort(key=lambda s: s.fiscal_date, reverse=True)
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display comparison
+    display_cash_flow_comparison(cash_flows, focus=focus)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        export_results = export_cash_flows(
+            cash_flows, export_formats, export_output_dir)
+
+        if export_results:
+            click.echo("\nExported cash flow statements to:")
+            for fmt, path in export_results.items():
+                if isinstance(path, list):
+                    click.echo(
+                        f"  {fmt.upper()}: Multiple files in {Path(path[0]).parent}")
+                else:
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@cash_flow_group.command(name="analyze")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=5,
+              help="Number of periods to analyze (default: 5, max: 20)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export analysis to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def analyze_cash_flow_command(symbol, period, count, export, output_dir, use_home_dir):
+    """
+    Analyze cash flow trends and patterns over time.
+
+    Analyzes multiple periods of cash flow data to identify trends, patterns,
+    and insights about a company's cash management.
+
+    Examples:
+        stockcli cash-flow analyze AAPL
+        stockcli cash-flow analyze MSFT --period quarter --count 8
+    """
+    from app.models.cash_flow import CashFlow
+    from app.utils.display import display_cash_flow_analysis
+    from app.utils.export import export_cash_flow_analysis, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching {period} cash flow statements for {symbol}..."):
+        try:
+            response = client.get_cash_flow(symbol, period, count)
+            cash_flows = []
+
+            for item in response.get('cash_flow', []):
+                cash_flow = CashFlow.from_api_response(item)
+                cash_flows.append(cash_flow)
+
+            if not cash_flows:
+                click.echo(f"No cash flow data available for {symbol}")
+                return
+
+            # Sort by date (oldest first for trend analysis)
+            cash_flows.sort(key=lambda s: s.fiscal_date)
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display analysis
+    display_cash_flow_analysis(cash_flows)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        export_results = export_cash_flow_analysis(
+            cash_flows, export_formats, export_output_dir)
+
+        if export_results:
+            click.echo("\nExported cash flow analysis to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+# Add shortcut at top level for easier access
+@cli.group(name="cash-flow")
+def cash_flow_shortcut():
+    """Shortcut for 'stock cash-flow' commands."""
+    pass
+
+
+@cash_flow_shortcut.command(name="get")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=1,
+              help="Number of periods to retrieve (default: 1, max: 20)")
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed cash flow statement")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export cash flow to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_cash_flow_shortcut(symbol, period, count, detailed, export, output_dir, use_home_dir):
+    """Get cash flow statement for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_cash_flow_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cash_flow_shortcut.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=4,
+              help="Number of periods to compare (default: 4, max: 20)")
+@click.option("--focus", "-f", type=click.Choice(['full', 'operating', 'investing', 'financing', 'summary']),
+              default='full', help="Focus on specific section (default: full cash flow)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_cash_flows_shortcut(symbol, period, count, focus, export, output_dir, use_home_dir):
+    """Compare cash flow statements across multiple periods."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        compare_cash_flows_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        focus=focus,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@cash_flow_shortcut.command(name="analyze")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", type=click.Choice(['annual', 'quarter']), default='annual',
+              help="Period type (annual or quarterly)")
+@click.option("--count", "-c", type=int, default=5,
+              help="Number of periods to analyze (default: 5, max: 20)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export analysis to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def analyze_cash_flow_shortcut(symbol, period, count, export, output_dir, use_home_dir):
+    """Analyze cash flow trends and patterns over time."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        analyze_cash_flow_command,
+        symbol=symbol,
+        period=period,
+        count=count,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@stock.group(name="executives")
+def executives_group():
+    """Commands for retrieving company executives and management information."""
+    pass
+
+
+@executives_group.command(name="list")
+@click.argument("symbol", required=True)
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed executive information with biographies")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export executives data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_executives_command(symbol, detailed, export, output_dir, use_home_dir):
+    """
+    List the executives of a company.
+
+    Retrieves information about the top management team of a company,
+    including executive names, titles, and other available information.
+
+    Examples:
+        stockcli executives list AAPL
+        stockcli executives list MSFT --detailed
+    """
+    from app.models.executives import ManagementTeam
+    from app.utils.display import display_executives
+    from app.utils.export import export_executives, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching executive information for {symbol}..."):
+        try:
+            response = client.get_executives(symbol)
+            management_team = ManagementTeam.from_api_response(
+                symbol, response)
+
+            if not management_team.executives:
+                click.echo(f"No executive data available for {symbol}")
+                return
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display executives
+    display_executives(management_team, detailed)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        export_results = export_executives(
+            management_team, export_formats, export_output_dir)
+
+        if export_results:
+            click.echo("\nExported executives data to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+@executives_group.command(name="profile")
+@click.argument("symbol", required=True)
+@click.option("--name", help="Executive name to search for (partial match)")
+@click.option("--position", help="Position/title to search for (CEO, CFO, etc.)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export executive profile to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def executive_profile_command(symbol, name, position, export, output_dir, use_home_dir):
+    """
+    Get detailed profile for a specific executive.
+
+    Search for and display detailed information about a specific executive
+    by name or position. If no exact match is found, the most relevant
+    executive will be shown.
+
+    Examples:
+        stockcli executives profile AAPL --name "Tim Cook"
+        stockcli executives profile MSFT --position "CEO"
+    """
+    from app.models.executives import ManagementTeam, Executive
+    from app.utils.display import display_executive_profile
+    from app.utils.export import export_executive_profile, get_default_export_dir, get_home_export_dir
+
+    # Validate inputs
+    if not name and not position:
+        click.echo("Error: Either --name or --position must be specified")
+        return
+
+    with create_progress_spinner(f"Fetching executive information for {symbol}..."):
+        try:
+            response = client.get_executives(symbol)
+            management_team = ManagementTeam.from_api_response(
+                symbol, response)
+
+            if not management_team.executives:
+                click.echo(f"No executive data available for {symbol}")
+                return
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Find the executive by name or position
+    target_executive = None
+
+    # If name is provided, search by name
+    if name:
+        name_lower = name.lower()
+        # First try exact match
+        for exec in management_team.executives:
+            if exec.name.lower() == name_lower:
+                target_executive = exec
+                break
+
+        # If no exact match, try partial match
+        if not target_executive:
+            for exec in management_team.executives:
+                if name_lower in exec.name.lower():
+                    target_executive = exec
+                    break
+
+    # If position is provided or no match found by name, search by position
+    if (not target_executive) and position:
+        position_lower = position.lower()
+
+        # Common abbreviations for executive positions
+        if position_lower == "ceo":
+            position_lower = "chief executive"
+        elif position_lower == "cfo":
+            position_lower = "chief financial"
+        elif position_lower == "coo":
+            position_lower = "chief operating"
+        elif position_lower == "cto":
+            position_lower = "chief technology"
+
+        # Search by position
+        for exec in management_team.executives:
+            if exec.title and position_lower in exec.title.lower():
+                target_executive = exec
+                break
+
+    # If still no match, try to get CEO or first executive
+    if not target_executive:
+        if position and position.lower() == "ceo":
+            target_executive = management_team.get_ceo()
+        elif position and position.lower() == "cfo":
+            target_executive = management_team.get_cfo()
+        elif position and position.lower() == "coo":
+            target_executive = management_team.get_coo()
+
+    # If still no match, use first executive as fallback
+    if not target_executive and management_team.executives:
+        target_executive = management_team.executives[0]
+
+    if not target_executive:
+        click.echo(f"No executives found for {symbol}")
+        return
+
+    # Display the executive profile
+    display_executive_profile(target_executive, management_team.name)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        export_results = export_executive_profile(
+            target_executive,
+            management_team.name,
+            symbol,
+            export_formats,
+            export_output_dir
+        )
+
+        if export_results:
+            click.echo("\nExported executive profile to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+@executives_group.command(name="compensation")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export compensation analysis to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def executive_compensation_command(symbol, export, output_dir, use_home_dir):
+    """
+    Analyze executive compensation for a company.
+
+    Shows an analysis of executive compensation structure, including
+    visualizations and statistics about the distribution of pay.
+
+    Examples:
+        stockcli executives compensation AAPL
+        stockcli executives compensation MSFT --export json
+    """
+    from app.models.executives import ManagementTeam
+    from app.utils.display import display_compensation_analysis
+    from app.utils.export import export_compensation_analysis, get_default_export_dir, get_home_export_dir
+
+    with create_progress_spinner(f"Fetching executive information for {symbol}..."):
+        try:
+            response = client.get_executives(symbol)
+            management_team = ManagementTeam.from_api_response(
+                symbol, response)
+
+            if not management_team.executives:
+                click.echo(f"No executive data available for {symbol}")
+                return
+
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+
+    # Display compensation analysis
+    display_compensation_analysis(management_team)
+
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+
+        export_results = export_compensation_analysis(
+            management_team, export_formats, export_output_dir)
+
+        if export_results:
+            click.echo("\nExported compensation analysis to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+# Add shortcut at top level for easier access
+@cli.group(name="executives")
+def executives_shortcut():
+    """Shortcut for 'stock executives' commands."""
+    pass
+
+
+@executives_shortcut.command(name="list")
+@click.argument("symbol", required=True)
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed executive information with biographies")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export executives data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def list_executives_shortcut(symbol, detailed, export, output_dir, use_home_dir):
+    """List the executives of a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        list_executives_command,
+        symbol=symbol,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@executives_shortcut.command(name="profile")
+@click.argument("symbol", required=True)
+@click.option("--name", help="Executive name to search for (partial match)")
+@click.option("--position", help="Position/title to search for (CEO, CFO, etc.)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export executive profile to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def executive_profile_shortcut(symbol, name, position, export, output_dir, use_home_dir):
+    """Get detailed profile for a specific executive."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        executive_profile_command,
+        symbol=symbol,
+        name=name,
+        position=position,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@executives_shortcut.command(name="compensation")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export compensation analysis to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def executive_compensation_shortcut(symbol, export, output_dir, use_home_dir):
+    """Analyze executive compensation for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        executive_compensation_command,
+        symbol=symbol,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@stock.group(name="market-cap")
+def market_cap_group():
+    """Commands for retrieving market capitalization data."""
+    pass
+
+
+@market_cap_group.command(name="history")
+@click.argument("symbol", required=True)
+@click.option("--interval", "-i", default="1day",
+              help="Time interval between data points (1min to 1month, default: 1day)")
+@click.option("--count", "-c", type=int, default=30,
+              help="Number of data points to retrieve (default: 30, max: 5000)")
+@click.option("--start-date", "-s", 
+              help="Optional start date in format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS")
+@click.option("--end-date", "-e", 
+              help="Optional end date in format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS")
+@click.option("--detailed", "-d", is_flag=True, help="Show more detailed data points")
+@click.option("--chart", is_flag=True, help="Show a chart visualization of market cap trends")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export market cap history to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def market_cap_history_command(symbol, interval, count, start_date, end_date, detailed, 
+                           chart, export, output_dir, use_home_dir):
+    """
+    Get market capitalization history for a company.
+    
+    Retrieves the market cap history for a given stock symbol over a specified period.
+    
+    Examples:
+        stockcli market-cap history AAPL
+        stockcli market-cap history MSFT --interval 1week --count 52 --chart
+    """
+    from app.models.market_cap import MarketCapHistory
+    from app.utils.display import display_market_cap_history, display_market_cap_chart
+    from app.utils.export import export_market_cap, get_default_export_dir, get_home_export_dir
+    
+
+    
+    with create_progress_spinner(f"Fetching market cap history for {symbol}..."):
+        try:
+            response = client.get_market_cap(symbol, interval, count, start_date, end_date)
+            market_cap_history = MarketCapHistory.from_api_response(response)
+            
+            if not market_cap_history.points:
+                click.echo(f"No market cap data available for {symbol}")
+                return
+        
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display market cap history
+    display_market_cap_history(market_cap_history, detailed)
+    
+    # Show chart if requested
+    if chart:
+        display_market_cap_chart(market_cap_history)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_market_cap(market_cap_history, export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported market cap history to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+@market_cap_group.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--daily-count", "-d", type=int, default=30,
+              help="Number of daily data points (default: 30)")
+@click.option("--monthly-count", "-m", type=int, default=24,
+              help="Number of monthly data points (default: 24)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def market_cap_compare_command(symbol, daily_count, monthly_count, export, output_dir, use_home_dir):
+    """
+    Compare short-term and long-term market cap trends.
+    
+    Analyzes market capitalization data across different time intervals to provide
+    insights on short-term and long-term trends.
+    
+    Examples:
+        stockcli market-cap compare AAPL
+        stockcli market-cap compare MSFT --daily-count 60 --monthly-count 36
+    """
+    from app.models.market_cap import MarketCapHistory
+    from app.utils.display import display_market_cap_comparison
+    from app.utils.export import export_market_cap_comparison, get_default_export_dir, get_home_export_dir
+    
+
+    
+    with create_progress_spinner(f"Fetching market cap data for {symbol}..."):
+        try:
+            # Fetch daily data
+            daily_response = client.get_market_cap(symbol, "1day", daily_count)
+            daily_history = MarketCapHistory.from_api_response(daily_response)
+            
+            # Fetch monthly data
+            monthly_response = client.get_market_cap(symbol, "1month", monthly_count)
+            monthly_history = MarketCapHistory.from_api_response(monthly_response)
+            
+            if not daily_history.points or not monthly_history.points:
+                click.echo(f"Insufficient market cap data available for {symbol}")
+                return
+        
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display comparison
+    display_market_cap_comparison(symbol, daily_history, monthly_history)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_market_cap_comparison(
+            symbol, 
+            daily_history, 
+            monthly_history, 
+            export_formats, 
+            export_output_dir
+        )
+        
+        if export_results:
+            click.echo("\nExported market cap comparison to:")
+            for fmt, paths in export_results.items():
+                if isinstance(paths, list):
+                    click.echo(f"  {fmt.upper()}: Multiple files in {Path(paths[0]).parent}")
+                else:
+                    click.echo(f"  {fmt.upper()}: {paths}")
+
+
+# Add shortcut at top level for easier access
+@cli.group(name="market-cap")
+def market_cap_shortcut():
+    """Shortcut for 'stock market-cap' commands."""
+    pass
+
+
+@market_cap_shortcut.command(name="history")
+@click.argument("symbol", required=True)
+@click.option("--interval", "-i", default="1day",
+              help="Time interval between data points (1min to 1month, default: 1day)")
+@click.option("--count", "-c", type=int, default=30,
+              help="Number of data points to retrieve (default: 30, max: 5000)")
+@click.option("--start-date", "-s", 
+              help="Optional start date in format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS")
+@click.option("--end-date", "-e", 
+              help="Optional end date in format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS")
+@click.option("--detailed", "-d", is_flag=True, help="Show more detailed data points")
+@click.option("--chart", is_flag=True, help="Show a chart visualization of market cap trends")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export market cap history to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def market_cap_history_shortcut(symbol, interval, count, start_date, end_date, detailed, 
+                             chart, export, output_dir, use_home_dir):
+    """Get market capitalization history for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        market_cap_history_command,
+        symbol=symbol,
+        interval=interval,
+        count=count,
+        start_date=start_date,
+        end_date=end_date,
+        detailed=detailed,
+        chart=chart,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@market_cap_shortcut.command(name="compare")
+@click.argument("symbol", required=True)
+@click.option("--daily-count", "-d", type=int, default=30,
+              help="Number of daily data points (default: 30)")
+@click.option("--monthly-count", "-m", type=int, default=24,
+              help="Number of monthly data points (default: 24)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def market_cap_compare_shortcut(symbol, daily_count, monthly_count, export, output_dir, use_home_dir):
+    """Compare short-term and long-term market cap trends."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        market_cap_compare_command,
+        symbol=symbol,
+        daily_count=daily_count,
+        monthly_count=monthly_count,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@stock.group(name="analysts")
+def analysts_group():
+    """Commands for retrieving analyst estimates and recommendations."""
+    pass
+
+
+@analysts_group.command(name="estimates")
+@click.argument("symbol", required=True)
+@click.option("--focus", "-f", type=click.Choice(['eps', 'revenue', 'recommendations', 'price', 'all']),
+              default='eps', help="Focus area (default: eps)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export analyst estimates to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_analyst_estimates_command(symbol, focus, export, output_dir, use_home_dir):
+    """
+    Get analyst estimates for a company symbol.
+    
+    Retrieves various analyst estimates including EPS forecasts,
+    revenue estimates, price targets, and recommendation trends.
+    
+    Examples:
+        stockcli analysts estimates AAPL
+        stockcli analysts estimates MSFT --focus all
+    """
+    from app.models.analysts_estimates import AnalystEstimates
+    from app.utils.display import display_analyst_estimates
+    from app.utils.export import export_analyst_estimates, get_default_export_dir, get_home_export_dir
+    
+    
+    with create_progress_spinner(f"Fetching analyst estimates for {symbol}..."):
+        try:
+            response = client.get_analyst_estimates(symbol)
+            estimates = AnalystEstimates.from_api_response(response)
+            
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display the estimates
+    display_analyst_estimates(estimates, focus)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_analyst_estimates(estimates, export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported analyst estimates to:")
+            for fmt, path in export_results.items():
+                if isinstance(path, list):
+                    click.echo(f"  {fmt.upper()}: Multiple files in {Path(path[0]).parent}")
+                else:
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+
+@analysts_group.command(name="eps-compare")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--period-type", "-p", type=click.Choice(['quarterly', 'annual']), default='annual',
+              help="Period type to compare (default: annual)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_eps_estimates_command(symbols, period_type, export, output_dir, use_home_dir):
+    """
+    Compare EPS estimates across multiple companies.
+    
+    Retrieve and compare analyst EPS estimates for multiple symbols
+    side-by-side to analyze expected performance.
+    
+    Examples:
+        stockcli analysts eps-compare AAPL MSFT GOOGL
+        stockcli analysts eps-compare AAPL MSFT --period-type quarterly
+    """
+    from app.models.analysts_estimates import AnalystEstimates
+    from app.utils.display import display_eps_comparison
+    from app.utils.export import export_eps_comparison, get_default_export_dir, get_home_export_dir
+    
+    
+    # Clean up symbol list
+    symbols = [symbol.upper() for symbol in symbols]
+    
+    # Fetch estimates for all symbols
+    all_estimates = []
+    
+    with create_progress_spinner(f"Fetching analyst estimates for {len(symbols)} symbols..."):
+        for symbol in symbols:
+            try:
+                response = client.get_analyst_estimates(symbol)
+                estimates = AnalystEstimates.from_api_response(response)
+                all_estimates.append(estimates)
+                
+            except TwelveDataAPIError as e:
+                click.echo(f"Error fetching estimates for {symbol}: {e}")
+                
+    if not all_estimates:
+        click.echo("No estimates data available for the provided symbols")
+        return
+    
+    # Display the comparison
+    display_eps_comparison(symbols, all_estimates, period_type)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_eps_comparison(symbols, all_estimates, period_type, 
+                                              export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported EPS comparison to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+# Add shortcut commands at top level
+@cli.group(name="analysts")
+def analysts_shortcut():
+    """Shortcut for 'stock analysts' commands."""
+    pass
+
+
+@analysts_shortcut.command(name="estimates")
+@click.argument("symbol", required=True)
+@click.option("--focus", "-f", type=click.Choice(['eps', 'revenue', 'recommendations', 'price', 'all']),
+              default='eps', help="Focus area (default: eps)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export analyst estimates to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_analyst_estimates_shortcut(symbol, focus, export, output_dir, use_home_dir):
+    """Get analyst estimates for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_analyst_estimates_command,
+        symbol=symbol,
+        focus=focus,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@analysts_shortcut.command(name="eps-compare")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--period-type", "-p", type=click.Choice(['quarterly', 'annual']), default='annual',
+              help="Period type to compare (default: annual)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_eps_estimates_shortcut(symbols, period_type, export, output_dir, use_home_dir):
+    """Compare EPS estimates across multiple companies."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        compare_eps_estimates_command,
+        symbols=symbols,
+        period_type=period_type,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+@analysts_group.command(name="revenue")
+@click.argument("symbol", required=True)
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information including historical surprises")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export revenue estimates to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_revenue_estimates_command(symbol, detailed, export, output_dir, use_home_dir):
+    """
+    Get revenue estimates for a company symbol.
+    
+    Retrieves analyst forecasts for a company's quarterly and annual 
+    sales (total revenue), both historical and future projections.
+    
+    Examples:
+        stockcli analysts revenue AAPL
+        stockcli analysts revenue MSFT --detailed
+    """
+    from app.models.analysts_estimates import AnalystEstimates
+    from app.utils.display import display_revenue_estimates, display_revenue_growth_visualization
+    from app.utils.export import export_revenue_estimates, get_default_export_dir, get_home_export_dir
+    
+    
+    with create_progress_spinner(f"Fetching revenue estimates for {symbol}..."):
+        try:
+            response = client.get_analyst_estimates(symbol)
+            estimates = AnalystEstimates.from_api_response(response)
+            
+            # Verify we have revenue estimates
+            if not estimates.quarterly_revenue_estimates and not estimates.annual_revenue_estimates:
+                click.echo(f"No revenue forecast data available for {symbol}")
+                return
+            
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display the estimates
+    display_revenue_estimates(estimates, detailed)
+    
+    # Also show the growth visualization
+    if estimates.annual_revenue_estimates:
+        display_revenue_growth_visualization(estimates)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_revenue_estimates(estimates, export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported revenue estimates to:")
+            for fmt, paths in export_results.items():
+                if fmt == 'json':
+                    click.echo(f"  JSON: {paths}")
+                elif fmt == 'csv' and isinstance(paths, list):
+                    for i, path in enumerate(paths):
+                        if i == 0:
+                            click.echo(f"  CSV files:")
+                        click.echo(f"    - {path}")
+
+
+@analysts_group.command(name="revenue-compare")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--period-type", "-p", type=click.Choice(['quarterly', 'annual']), default='annual',
+              help="Period type to compare (default: annual)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_revenue_estimates_command(symbols, period_type, export, output_dir, use_home_dir):
+    """
+    Compare revenue estimates across multiple companies.
+    
+    Retrieve and compare analyst revenue forecasts for multiple symbols
+    side-by-side to analyze expected sales performance.
+    
+    Examples:
+        stockcli analysts revenue-compare AAPL MSFT GOOGL
+        stockcli analysts revenue-compare AAPL MSFT --period-type quarterly
+    """
+    from app.models.analysts_estimates import AnalystEstimates
+    from app.utils.display import display_revenue_comparison
+    from app.utils.export import export_revenue_comparison, get_default_export_dir, get_home_export_dir
+    
+    
+    # Clean up symbol list
+    symbols = [symbol.upper() for symbol in symbols]
+    
+    # Fetch estimates for all symbols
+    all_estimates = []
+    
+    with create_progress_spinner(f"Fetching revenue estimates for {len(symbols)} symbols..."):
+        for symbol in symbols:
+            try:
+                response = client.get_analyst_estimates(symbol)
+                estimates = AnalystEstimates.from_api_response(response)
+                
+                # Verify we have revenue estimates
+                if ((period_type == 'quarterly' and estimates.quarterly_revenue_estimates) or 
+                    (period_type == 'annual' and estimates.annual_revenue_estimates)):
+                    all_estimates.append(estimates)
+                else:
+                    click.echo(f"No {period_type} revenue estimates available for {symbol}")
+                
+            except TwelveDataAPIError as e:
+                click.echo(f"Error fetching estimates for {symbol}: {e}")
+                
+    if not all_estimates:
+        click.echo("No revenue estimates data available for the provided symbols")
+        return
+    
+    # Display the comparison
+    display_revenue_comparison(symbols, all_estimates, period_type)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_revenue_comparison(symbols, all_estimates, period_type, 
+                                                 export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported revenue comparison to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+# Add shortcut commands at top level
+@analysts_shortcut.command(name="revenue")
+@click.argument("symbol", required=True)
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed information including historical surprises")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export revenue estimates to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_revenue_estimates_shortcut(symbol, detailed, export, output_dir, use_home_dir):
+    """Get revenue estimates for a company."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_revenue_estimates_command,
+        symbol=symbol,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@analysts_shortcut.command(name="revenue-compare")
+@click.argument("symbols", nargs=-1, required=True)
+@click.option("--period-type", "-p", type=click.Choice(['quarterly', 'annual']), default='annual',
+              help="Period type to compare (default: annual)")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export comparison data to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def compare_revenue_estimates_shortcut(symbols, period_type, export, output_dir, use_home_dir):
+    """Compare revenue estimates across multiple companies."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        compare_revenue_estimates_command,
+        symbols=symbols,
+        period_type=period_type,
         export=export,
         output_dir=output_dir,
         use_home_dir=use_home_dir

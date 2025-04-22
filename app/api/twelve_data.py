@@ -1860,7 +1860,6 @@ class TwelveDataClient:
 
     # This is the new method to be added to the TwelveDataClient class
 
-
     def get_dividend_history(self, symbol: str, years: int = 10) -> Dict[str, Any]:
         """
         Get dividend history for a stock symbol.
@@ -1881,7 +1880,8 @@ class TwelveDataClient:
             "range": f"{years}year"  # API supports format like "10year"
         }
 
-        logger.debug(f"Fetching dividend history for {symbol} over {years} years")
+        logger.debug(
+            f"Fetching dividend history for {symbol} over {years} years")
         response = self._make_request(endpoint, params)
 
         if not response.get("dividends"):
@@ -1911,14 +1911,14 @@ class TwelveDataClient:
 
         return response
 
-    def get_dividend_calendar(self, start_date: Optional[str] = None, 
-                           end_date: Optional[str] = None,
-                           symbol: Optional[str] = None,
-                           exchange: Optional[str] = None,
-                           range_type: Optional[str] = None) -> Dict[str, Any]:
+    def get_dividend_calendar(self, start_date: Optional[str] = None,
+                              end_date: Optional[str] = None,
+                              symbol: Optional[str] = None,
+                              exchange: Optional[str] = None,
+                              range_type: Optional[str] = None) -> Dict[str, Any]:
         """
         Get dividend calendar for a date range.
-        
+
         Args:
             start_date: Start date in YYYY-MM-DD format (required if range_type not provided)
             end_date: End date in YYYY-MM-DD format (required if range_type not provided)
@@ -1926,17 +1926,17 @@ class TwelveDataClient:
             exchange: Optional exchange code to filter by
             range_type: Predefined range ('today', 'week', 'month', 'quarter', 'year')
                         Alternative to providing start_date and end_date
-            
+
         Returns:
             Dictionary containing dividend calendar events
-            
+
         Raises:
             TwelveDataAPIError: If the API request fails
             ValueError: If date parameters are invalid
         """
         endpoint = "dividends_calendar"
         params = {}
-        
+
         # Either range_type OR (start_date AND end_date) must be provided
         if range_type:
             if range_type not in ('today', 'week', 'month', 'quarter', 'year'):
@@ -1952,54 +1952,56 @@ class TwelveDataClient:
                 datetime.strptime(end_date, '%Y-%m-%d')
             except ValueError:
                 raise ValueError("Dates must be in YYYY-MM-DD format")
-            
+
             params['start_date'] = start_date
             params['end_date'] = end_date
-            logger.debug(f"Using custom date range: {start_date} to {end_date}")
+            logger.debug(
+                f"Using custom date range: {start_date} to {end_date}")
         else:
             raise ValueError(
                 "Either range_type OR both start_date and end_date must be provided"
             )
-        
+
         # Add optional filters
         if symbol:
             params['symbol'] = symbol
             logger.debug(f"Filtering by symbol: {symbol}")
-        
+
         if exchange:
             params['exchange'] = exchange
             logger.debug(f"Filtering by exchange: {exchange}")
-        
+
         logger.debug(f"Fetching dividend calendar with params: {params}")
         response = self._make_request(endpoint, params)
-        
+
         if response.get("code") == 429:
             raise TwelveDataAPIError("API rate limit exceeded")
         elif response.get("code") == 400:
             error_msg = response.get("message", f"Error: {response}")
             logger.warning(f"API Error: {error_msg}")
             raise TwelveDataAPIError(f"API Error: {error_msg}")
-        
+
         # If we don't have events in the response, return empty structure
         if not response.get("events") and not response.get("code"):
-            logger.warning(f"No dividend calendar events found for the specified parameters")
+            logger.warning(
+                f"No dividend calendar events found for the specified parameters")
             return {
                 "events": []
             }
-        
+
         return response
-    
+
     def get_stock_splits(self, symbol: str, years: int = 10) -> Dict[str, Any]:
         """
         Get stock splits history for a stock symbol.
-        
+
         Args:
             symbol: Stock symbol to fetch split data for
             years: Number of years of split history to fetch (default: 10)
-            
+
         Returns:
             Dictionary containing splits history
-            
+
         Raises:
             TwelveDataAPIError: If the API request fails
         """
@@ -2008,10 +2010,10 @@ class TwelveDataClient:
             "symbol": symbol,
             "range": f"{years}year"  # API supports format like "10year"
         }
-        
+
         logger.debug(f"Fetching stock splits for {symbol} over {years} years")
         response = self._make_request(endpoint, params)
-        
+
         # Check for API errors
         if response.get("code") == 429:
             raise TwelveDataAPIError("API rate limit exceeded")
@@ -2029,11 +2031,13 @@ class TwelveDataClient:
                 }
             else:
                 logger.error(f"API Error: {error_msg}")
-                raise TwelveDataAPIError(f"Error fetching split data: {error_msg}")
-        
+                raise TwelveDataAPIError(
+                    f"Error fetching split data: {error_msg}")
+
         # Check if we have the expected structure
         if not isinstance(response.get("splits"), list):
-            logger.warning(f"Unexpected response format for splits: {response}")
+            logger.warning(
+                f"Unexpected response format for splits: {response}")
             # Create a valid empty response
             return {
                 "meta": {
@@ -2042,17 +2046,17 @@ class TwelveDataClient:
                 },
                 "splits": []
             }
-        
+
         return response
-    
-    def get_splits_calendar(self, start_date: Optional[str] = None, 
+
+    def get_splits_calendar(self, start_date: Optional[str] = None,
                             end_date: Optional[str] = None,
                             symbol: Optional[str] = None,
                             exchange: Optional[str] = None,
                             range_type: Optional[str] = None) -> Dict[str, Any]:
         """
         Get stock splits calendar for a date range.
-        
+
         Args:
             start_date: Start date in YYYY-MM-DD format (required if range_type not provided)
             end_date: End date in YYYY-MM-DD format (required if range_type not provided)
@@ -2060,17 +2064,17 @@ class TwelveDataClient:
             exchange: Optional exchange code to filter by
             range_type: Predefined range ('today', 'week', 'month', 'quarter', 'year')
                         Alternative to providing start_date and end_date
-            
+
         Returns:
             Dictionary containing splits calendar events
-            
+
         Raises:
             TwelveDataAPIError: If the API request fails
             ValueError: If date parameters are invalid
         """
         endpoint = "splits_calendar"
         params = {}
-        
+
         # Either range_type OR (start_date AND end_date) must be provided
         if range_type:
             if range_type not in ('today', 'week', 'month', 'quarter', 'year'):
@@ -2086,69 +2090,239 @@ class TwelveDataClient:
                 datetime.strptime(end_date, '%Y-%m-%d')
             except ValueError:
                 raise ValueError("Dates must be in YYYY-MM-DD format")
-            
+
             params['start_date'] = start_date
             params['end_date'] = end_date
-            logger.debug(f"Using custom date range: {start_date} to {end_date}")
+            logger.debug(
+                f"Using custom date range: {start_date} to {end_date}")
         else:
             raise ValueError(
                 "Either range_type OR both start_date and end_date must be provided"
             )
-        
+
         # Add optional filters
         if symbol:
             params['symbol'] = symbol
             logger.debug(f"Filtering by symbol: {symbol}")
-        
+
         if exchange:
             params['exchange'] = exchange
             logger.debug(f"Filtering by exchange: {exchange}")
-        
+
         logger.debug(f"Fetching splits calendar with params: {params}")
         response = self._make_request(endpoint, params)
-        
+
         if response.get("code") == 429:
             raise TwelveDataAPIError("API rate limit exceeded")
         elif response.get("code") == 400:
             error_msg = response.get("message", f"Error: {response}")
             logger.warning(f"API Error: {error_msg}")
             raise TwelveDataAPIError(f"API Error: {error_msg}")
-        
+
         # If we don't have events in the response, return empty structure
         if not response.get("events") and not response.get("code"):
-            logger.warning(f"No split calendar events found for the specified parameters")
+            logger.warning(
+                f"No split calendar events found for the specified parameters")
             return {
                 "events": []
             }
-        
+
         return response
-    
+
     def get_income_statement(self, symbol: str, period: str = 'annual', last_n: int = 4) -> Dict:
         """
         Fetch income statement data for a company.
-        
+
         Args:
             symbol: The stock symbol
             period: 'annual' or 'quarter'
             last_n: Number of periods to retrieve (max 20)
-        
+
         Returns:
             Dict containing income statement data
         """
-        self.logger.debug(f"Fetching {period} income statement for {symbol} (last {last_n} periods)")
-        
+        self.logger.debug(
+            f"Fetching {period} income statement for {symbol} (last {last_n} periods)")
+
         params = {
             'symbol': symbol,
             'period': period,
             'outputsize': min(last_n, 20)  # API limit is 20
         }
-        
+
         response = self._make_request('income_statement', params)
-        
+
         if not response.get('income_statement'):
-            raise TwelveDataAPIError(f"No income statement data available for {symbol}")
+            raise TwelveDataAPIError(
+                f"No income statement data available for {symbol}")
+
+        return response
+
+    def get_balance_sheet(self, symbol: str, period: str = 'annual', last_n: int = 4) -> Dict:
+        """
+        Fetch balance sheet data for a company.
+
+        Args:
+            symbol: The stock symbol
+            period: 'annual' or 'quarter'
+            last_n: Number of periods to retrieve (max 20)
+
+        Returns:
+            Dict containing balance sheet data
+        """
+
+        params = {
+            'symbol': symbol,
+            'period': period,
+            'outputsize': min(last_n, 20)  # API limit is 20
+        }
+
+        response = self._make_request('balance_sheet', params)
+
+        if not response.get('balance_sheet'):
+            raise TwelveDataAPIError(
+                f"No balance sheet data available for {symbol}")
+
+        return response
+
+    def get_consolidated_balance_sheet(self, symbol: str, period: str = 'annual', last_n: int = 4) -> Dict:
+        """
+        Fetch consolidated balance sheet data for a company.
+
+        Args:
+            symbol: The stock symbol
+            period: 'annual' or 'quarter'
+            last_n: Number of periods to retrieve (max 20)
+
+        Returns:
+            Dict containing consolidated balance sheet data
+        """
+
+        params = {
+            'symbol': symbol,
+            'period': period,
+            'outputsize': min(last_n, 20)  # API limit is 20
+        }
+
+        response = self._make_request('balance_sheet/consolidated', params)
+
+        if not response.get('balance_sheet'):
+            raise TwelveDataAPIError(
+                f"No consolidated balance sheet data available for {symbol}")
+
+        return response
+
+    def get_cash_flow(self, symbol: str, period: str = 'annual', last_n: int = 4) -> Dict:
+        """
+        Fetch cash flow statement data for a company.
+
+        Args:
+            symbol: The stock symbol
+            period: 'annual' or 'quarter'
+            last_n: Number of periods to retrieve (max 20)
+
+        Returns:
+            Dict containing cash flow statement data
+        """
+
+        params = {
+            'symbol': symbol,
+            'period': period,
+            'outputsize': min(last_n, 20)  # API limit is 20
+        }
+
+        response = self._make_request('cash_flow', params)
+
+        if not response.get('cash_flow'):
+            raise TwelveDataAPIError(
+                f"No cash flow data available for {symbol}")
+
+        return response
+
+    def get_executives(self, symbol: str) -> Dict:
+        """
+        Fetch information about company executives.
+
+        Args:
+            symbol: The stock symbol
+
+        Returns:
+            Dict containing executives data
+        """
+
+        params = {
+            'symbol': symbol
+        }
+
+        response = self._make_request('key_executives', params)
+
+        if 'executives' not in response:
+            raise TwelveDataAPIError(
+                f"No executives data available for {symbol}")
+
+        return response
+
+    def get_market_cap(self, symbol: str, interval: str = '1day',
+                       outputsize: int = 30, start_date: str = None,
+                       end_date: str = None) -> Dict:
+        """
+        Fetch market capitalization history for a company.
+
+        Args:
+            symbol: The stock symbol
+            interval: Time interval between data points (1min, 5min, 15min, 30min, 45min, 1h, 2h, 4h, 1day, 1week, 1month)
+            outputsize: Number of data points to retrieve (default: 30, max: 5000)
+            start_date: Optional start date in format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
+            end_date: Optional end date in format YYYY-MM-DD or YYYY-MM-DD HH:MM:SS
+
+        Returns:
+            Dict containing market capitalization history data
+        """
+
+        params = {
+            'symbol': symbol,
+            'interval': interval,
+            'outputsize': min(outputsize, 5000)  # API limit is 5000
+        }
+
+        # Add optional date parameters if provided
+        if start_date:
+            params['start_date'] = start_date
+        if end_date:
+            params['end_date'] = end_date
+
+        response = self._make_request('market_cap', params)
+
+        if not response.get('values'):
+            raise TwelveDataAPIError(
+                f"No market cap data available for {symbol}")
+
+        return response
+    
+    def get_analyst_estimates(self, symbol: str) -> Dict:
+        """
+        Fetch analyst estimates for a company, including EPS estimates,
+        revenue forecasts, price targets, and recommendation trends.
+        
+        Args:
+            symbol: The stock symbol
+        
+        Returns:
+            Dict containing analyst estimates data
+        """
+        
+        params = {
+            'symbol': symbol
+        }
+        
+        response = self._make_request('earnings_estimate', params)
+        
+        # Check if we have valid response
+        if 'symbol' not in response or not response.get('quarterly_earnings_estimate'):
+            raise TwelveDataAPIError(f"No analyst estimates available for {symbol}")
         
         return response
+
 
 # Initialize the TwelveData client
 client = TwelveDataClient()

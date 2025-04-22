@@ -138,8 +138,11 @@ After installation, you can explore the available commands:
 
 ## Available Commands
 
+- **stock version**  
+  Show the application version.
+
 - **stock quote**  
-  Fetch current stock quotes for one or more symbols with options for auto-refresh, detailed view, and export.
+  Fetch current stock quotes for one or more symbols with options for auto‑refresh, detailed view, and export.
 
 - **stock export-last**  
   Export the most recently fetched quotes to JSON, CSV, or both.
@@ -151,55 +154,79 @@ After installation, you can explore the available commands:
   List available symbol types.
 
 - **stock symbols exchanges**  
-  Display exchanges (along with an option to export results).
+  Display exchanges (with an option to export results).
 
-- **stock symbols exchange-details** or **trading-hours**  
-  Get detailed exchange information including trading hours for a given exchange code.
-
-- **stock symbols search**  
-  Search for symbols matching a query.
+- **stock symbols exchange-details / trading-hours / all-trading-hours / instrument-types / search / cross-list**  
+  Get detailed exchange information (including trading hours) or search/cross‑list symbols.
 
 - **stock time-series**  
   Fetch historical price and meta data for a specified symbol with options for interval, date range, and export.
 
 - **stock forex rate**  
-  Get the real-time exchange rate for a currency pair (e.g., EUR/USD).
+  Get the real‑time exchange rate for a currency pair.
+
+- **stock forex pairs / currencies**  
+  List available forex pairs or currencies with export options.
+
+- **stock crypto list / exchanges**  
+  List available cryptocurrency pairs or exchanges.
 
 - **stock latest-quote**  
-  Retrieve the most recent quote for a specified symbol, with options for a simplified view and auto-refresh.
+  Retrieve the most recent quote for a specified symbol with options for simplified view and auto‑refresh.
 
 - **stock eod**  
-  Obtain end-of-day price data for a specific symbol.
+  Obtain end‑of‑day price data for a specific symbol.
 
-- **stock gainers**  
-  Show top gaining stocks for the day.
-
-- **stock losers**  
-  Show top losing stocks for the day.
+- **stock gainers / losers**  
+  Show top gaining or losing stocks for the day.
 
 - **stock mutual-funds list**  
-  List available mutual funds with detailed information and filtering options.
+  List available mutual funds (ETFs and/or mutual funds) with filtering and detailed information.
 
 - **stock mutual-funds info**  
   Get detailed profile information for a specific mutual fund.
 
-- **stock mutual-funds families**  
-  List available fund families.
+- **stock mutual-funds families / family**  
+  List available fund families or get details of a specific fund family.
 
-- **stock mutual-funds family**  
-  Get detailed information about a specific fund family.
+- **stock mutual-funds types / type**  
+  List available mutual fund types or get detailed information about a specific mutual fund type.
 
-- **stock mutual-funds types**  
-  List available mutual fund types.
-
-- **stock mutual-funds type**  
-  Get detailed information about a specific mutual fund type.
+- **stock funds list / etfs / mutual**  
+  List funds with filtering options.
 
 - **stock company profile**  
-  Retrieve detailed company profile information for a given ticker symbol.
+  Retrieve detailed company profile information.
+
+- **stock dividends history / compare / calendar**  
+  Retrieve dividend history, compare histories for multiple symbols, or display a dividend calendar.
+
+- **stock splits history / compare / calendar**  
+  Show stock splits history, compare splits, or view a splits calendar.
+
+- **stock income-statement get / compare / expenses**  
+  Retrieve an income statement, compare statements across periods, or show expense breakdown.
+
+- **stock balance-sheet get / compare / structure**  
+  Fetch a company’s balance sheet, compare multiple sheets, or display the structure breakdown.
+
+- **stock consolidated-balance-sheet get / compare / structure**  
+  Retrieve a consolidated balance sheet (across subsidiaries), compare them, or show structure.
+
+- **stock cash-flow get / compare / analyze**  
+  Obtain cash flow statements, compare multiple periods, or analyze cash flow trends.
+
+- **stock executives list / profile / compensation**  
+  List a company’s executives, get an executive profile, or analyze compensation structure.
+
+- **stock market-cap history / compare**  
+  Retrieve or compare market capitalization history (with charting options).
+
+- **stock analysts estimates / eps-compare / revenue / revenue-compare**  
+  Show analyst estimates, compare EPS or revenue estimates across periods.
 
 **Shortcut Commands:**  
-Additionally, shortcut commands are provided for ease of use (e.g., `quote`, `export-last`, `symbols`, `forex`, `crypto`, `funds`, `bonds`, `etfs`, `commodities`, `mutual-funds`, and `company` with their corresponding subcommands).
+Additionally, shortcuts are provided (e.g., `quote`, `export-last`, `symbols`, `forex`, `crypto`, `funds`, `bonds`, `etfs`, `commodities`, `mutual-funds`, `company`, `dividends`, `splits`, `income-statement`, `balance-sheet`, `cash-flow`, `executives`, `market-cap`, and `analysts`) with corresponding subcommands.
 
 ## Project Structure
 

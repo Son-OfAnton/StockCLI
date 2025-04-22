@@ -14,14 +14,19 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.panel import Panel
 from rich.box import Box
 
+from app.models.analysts_estimates import AnalystEstimates
+from app.models.balance_sheet import BalanceSheet
 from app.models.bond import Bond
+from app.models.cash_flow import CashFlow
 from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.divided_calendar import DividendCalendar, DividendCalendarEvent
 from app.models.dividend import DividendHistory
 from app.models.etf import ETF
 from app.models.exchange_details import ExchangeSchedule
+from app.models.executives import Executive, ManagementTeam
 from app.models.forex import ForexRate
 from app.models.income_statement import IncomeStatement
+from app.models.market_cap import MarketCapHistory, MarketCapPoint
 from app.models.splits import SplitHistory
 from app.models.splits_calendar import SplitCalendarEvent, SplitsCalendar
 from app.models.stock import TimeSeries
@@ -3702,3 +3707,3080 @@ def display_expense_breakdown(income_statement: IncomeStatement):
             console.print(
                 f"{expense.name}: {percentage:.1f}% {bar}"
             )
+
+def display_balance_sheet(balance_sheet: BalanceSheet, detailed: bool = False):
+    """
+    Display a balance sheet in the terminal.
+    
+    Args:
+        balance_sheet: The BalanceSheet object to display
+        detailed: If True, show more detailed breakdown and percentages
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", balance_sheet.symbol.upper())
+    header.add_row("Fiscal Period:", f"{balance_sheet.fiscal_period} ({balance_sheet.fiscal_date})")
+    header.add_row("Currency:", balance_sheet.currency)
+    
+    console.print(Panel(header, title="Balance Sheet", expand=False))
+    
+    # Create main table
+    table = Table(show_header=True, header_style="bold")
+    
+    table.add_column("Item", style="dim")
+    table.add_column("Amount", justify="right")
+    
+    if detailed:
+        table.add_column("% of Total Assets", justify="right")
+    
+    # Display balance sheet in accounting format: Assets = Liabilities + Equity
+    
+    # ASSETS SECTION
+    table.add_row("ASSETS", "", style="bold")
+    
+    # Current Assets
+    table.add_row("Current Assets:", "", style="bold green")
+    
+    for asset in balance_sheet.current_assets.items:
+        table.add_row(
+            f"  {asset.name}", 
+            asset.value_str,
+            asset.percentage_str if detailed else None
+        )
+    
+    table.add_row(
+        "Total Current Assets", 
+        balance_sheet.current_assets.total.value_str,
+        balance_sheet.current_assets.total.percentage_str if detailed else None,
+        style="bold green"
+    )
+    
+    # Non-Current Assets
+    table.add_row("", "", style="dim")
+    table.add_row("Non-Current Assets:", "", style="bold green")
+    
+    for asset in balance_sheet.non_current_assets.items:
+        table.add_row(
+            f"  {asset.name}", 
+            asset.value_str,
+            asset.percentage_str if detailed else None
+        )
+    
+    table.add_row(
+        "Total Non-Current Assets", 
+        balance_sheet.non_current_assets.total.value_str,
+        balance_sheet.non_current_assets.total.percentage_str if detailed else None,
+        style="bold green"
+    )
+    
+    # Total Assets
+    table.add_row("", "", style="dim")
+    table.add_row(
+        "TOTAL ASSETS", 
+        balance_sheet.total_assets.value_str,
+        "100.00%" if detailed else None,
+        style="bold green"
+    )
+    
+    # LIABILITIES SECTION
+    table.add_row("", "", style="dim")
+    table.add_row("LIABILITIES", "", style="bold")
+    
+    # Current Liabilities
+    table.add_row("Current Liabilities:", "", style="bold red")
+    
+    for liability in balance_sheet.current_liabilities.items:
+        table.add_row(
+            f"  {liability.name}", 
+            liability.value_str,
+            liability.percentage_str if detailed else None
+        )
+    
+    table.add_row(
+        "Total Current Liabilities", 
+        balance_sheet.current_liabilities.total.value_str,
+        balance_sheet.current_liabilities.total.percentage_str if detailed else None,
+        style="bold red"
+    )
+    
+    # Non-Current Liabilities
+    table.add_row("", "", style="dim")
+    table.add_row("Non-Current Liabilities:", "", style="bold red")
+    
+    for liability in balance_sheet.non_current_liabilities.items:
+        table.add_row(
+            f"  {liability.name}", 
+            liability.value_str,
+            liability.percentage_str if detailed else None
+        )
+    
+    table.add_row(
+        "Total Non-Current Liabilities", 
+        balance_sheet.non_current_liabilities.total.value_str,
+        balance_sheet.non_current_liabilities.total.percentage_str if detailed else None,
+        style="bold red"
+    )
+    
+    # Total Liabilities
+    table.add_row("", "", style="dim")
+    table.add_row(
+        "TOTAL LIABILITIES", 
+        balance_sheet.total_liabilities.value_str,
+        balance_sheet.total_liabilities.percentage_str if detailed else None,
+        style="bold red"
+    )
+    
+    # SHAREHOLDERS' EQUITY SECTION
+    table.add_row("", "", style="dim")
+    table.add_row("SHAREHOLDERS' EQUITY", "", style="bold")
+    
+    for equity_item in balance_sheet.shareholders_equity.items:
+        # Treasury stock and accumulated OCI can be negative
+        style = None
+        if equity_item.name in ['Treasury Stock', 'Accumulated Other Comprehensive Income'] and equity_item.value < 0:
+            style = "red"
+            
+        table.add_row(
+            f"  {equity_item.name}", 
+            equity_item.value_str,
+            equity_item.percentage_str if detailed else None,
+            style=style
+        )
+    
+    table.add_row(
+        "TOTAL SHAREHOLDERS' EQUITY", 
+        balance_sheet.shareholders_equity.total.value_str,
+        balance_sheet.shareholders_equity.total.percentage_str if detailed else None,
+        style="bold"
+    )
+    
+    # Total Liabilities and Shareholders' Equity
+    table.add_row("", "", style="dim")
+    table.add_row(
+        "TOTAL LIABILITIES AND EQUITY", 
+        balance_sheet.total_liabilities_and_equity.value_str,
+        "100.00%" if detailed else None,
+        style="bold"
+    )
+    
+    console.print(table)
+    
+    # Display key financial ratios
+    if detailed:
+        ratio_table = Table(show_header=True, header_style="bold")
+        ratio_table.add_column("Financial Ratio")
+        ratio_table.add_column("Value", justify="right")
+        
+        # Current ratio
+        ratio_table.add_row(
+            "Current Ratio (Current Assets / Current Liabilities)",
+            balance_sheet.current_ratio.value_str
+        )
+        
+        # Debt to equity
+        ratio_table.add_row(
+            "Debt to Equity Ratio (Total Liabilities / Shareholders' Equity)",
+            balance_sheet.debt_to_equity.value_str
+        )
+        
+        # Debt ratio
+        ratio_table.add_row(
+            "Debt Ratio (Total Liabilities / Total Assets)",
+            balance_sheet.debt_ratio.value_str
+        )
+        
+        console.print("\n[bold]Key Financial Ratios:[/bold]")
+        console.print(ratio_table)
+
+
+def display_balance_sheet_comparison(statements: List[BalanceSheet], focus: str = 'full'):
+    """
+    Display a comparison of multiple balance sheets side by side.
+    
+    Args:
+        statements: List of BalanceSheet objects to compare
+        focus: View mode - 'full', 'assets', 'liabilities', 'equity', or 'ratios'
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    if not statements:
+        console.print("[bold red]No balance sheets to display[/bold red]")
+        return
+    
+    # Sort statements by date (most recent first)
+    sorted_statements = sorted(statements, key=lambda s: s.fiscal_date, reverse=True)
+    
+    # Create header
+    symbol = sorted_statements[0].symbol.upper()
+    period_type = sorted_statements[0].fiscal_period
+    
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", symbol)
+    header.add_row("Statement Type:", f"{period_type} Balance Sheets")
+    header.add_row("Currency:", sorted_statements[0].currency)
+    header.add_row("Periods:", ", ".join(s.fiscal_date for s in sorted_statements))
+    
+    title = f"Balance Sheet Comparison - {focus.capitalize()} View"
+        
+    console.print(Panel(header, title=title, expand=False))
+    
+    # Create main comparison table
+    table = Table(show_header=True, header_style="bold")
+    
+    # Add columns - first for line items, then one for each period
+    table.add_column("Item", style="dim")
+    
+    for statement in sorted_statements:
+        # Use fiscal date as column header
+        table.add_column(statement.fiscal_date, justify="right")
+        
+    # Determine which sections to show based on focus
+    if focus == 'full' or focus == 'assets':
+        # ASSETS SECTION
+        table.add_row("ASSETS", *["" for _ in sorted_statements], style="bold")
+        
+        # Current Assets Total
+        table.add_row(
+            "Current Assets",
+            *[s.current_assets.total.value_str for s in sorted_statements],
+            style="bold green"
+        )
+        
+        # Non-Current Assets Total
+        table.add_row(
+            "Non-Current Assets",
+            *[s.non_current_assets.total.value_str for s in sorted_statements],
+            style="bold green"
+        )
+        
+        # Total Assets
+        table.add_row(
+            "TOTAL ASSETS",
+            *[s.total_assets.value_str for s in sorted_statements],
+            style="bold green"
+        )
+        
+    if focus == 'full' or focus == 'liabilities':
+        # LIABILITIES SECTION
+        if focus == 'full':
+            table.add_row("", *["" for _ in sorted_statements], style="dim")
+            
+        table.add_row("LIABILITIES", *["" for _ in sorted_statements], style="bold")
+        
+        # Current Liabilities Total
+        table.add_row(
+            "Current Liabilities",
+            *[s.current_liabilities.total.value_str for s in sorted_statements],
+            style="bold red"
+        )
+        
+        # Non-Current Liabilities Total
+        table.add_row(
+            "Non-Current Liabilities",
+            *[s.non_current_liabilities.total.value_str for s in sorted_statements],
+            style="bold red"
+        )
+        
+        # Total Liabilities
+        table.add_row(
+            "TOTAL LIABILITIES",
+            *[s.total_liabilities.value_str for s in sorted_statements],
+            style="bold red"
+        )
+    
+    if focus == 'full' or focus == 'equity':
+        # SHAREHOLDERS' EQUITY SECTION
+        if focus == 'full':
+            table.add_row("", *["" for _ in sorted_statements], style="dim")
+            
+        table.add_row("SHAREHOLDERS' EQUITY", *["" for _ in sorted_statements], style="bold")
+        
+        # Find all unique equity item names
+        equity_names = set()
+        for statement in sorted_statements:
+            equity_names.update(item.name for item in statement.shareholders_equity.items)
+            
+        # Add rows for each equity item
+        for name in sorted(equity_names):
+            values = []
+            
+            for statement in sorted_statements:
+                # Find matching equity item
+                item = next((i for i in statement.shareholders_equity.items if i.name == name), None)
+                values.append(item.value_str if item else "N/A")
+                
+            table.add_row(name, *values)
+        
+        # Total Shareholders' Equity
+        table.add_row(
+            "TOTAL SHAREHOLDERS' EQUITY",
+            *[s.shareholders_equity.total.value_str for s in sorted_statements],
+            style="bold"
+        )
+        
+        if focus == 'full':
+            # Total Liabilities and Equity
+            table.add_row("", *["" for _ in sorted_statements], style="dim")
+            table.add_row(
+                "TOTAL LIABILITIES AND EQUITY",
+                *[s.total_liabilities_and_equity.value_str for s in sorted_statements],
+                style="bold"
+            )
+    
+    # Always show ratios if in ratio focus or detailed view
+    if focus == 'ratios' or focus == 'full':
+        # FINANCIAL RATIOS
+        if focus == 'full':
+            table.add_row("", *["" for _ in sorted_statements], style="dim")
+            
+        table.add_row("KEY FINANCIAL RATIOS", *["" for _ in sorted_statements], style="bold")
+        
+        # Current Ratio
+        table.add_row(
+            "Current Ratio",
+            *[s.current_ratio.value_str for s in sorted_statements]
+        )
+        
+        # Debt to Equity Ratio
+        table.add_row(
+            "Debt to Equity Ratio",
+            *[s.debt_to_equity.value_str for s in sorted_statements]
+        )
+        
+        # Debt Ratio
+        table.add_row(
+            "Debt Ratio",
+            *[s.debt_ratio.value_str for s in sorted_statements]
+        )
+    
+    console.print(table)
+
+
+def display_balance_sheet_structure(balance_sheet: BalanceSheet):
+    """
+    Display a visual breakdown of the balance sheet structure.
+    
+    Args:
+        balance_sheet: The BalanceSheet object to display
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.columns import Columns
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", balance_sheet.symbol.upper())
+    header.add_row("Fiscal Period:", f"{balance_sheet.fiscal_period} ({balance_sheet.fiscal_date})")
+    header.add_row("Currency:", balance_sheet.currency)
+    header.add_row("Total Assets:", balance_sheet.total_assets.value_str)
+    
+    console.print(Panel(header, title="Balance Sheet Structure", expand=False))
+    
+    # Create asset structure visualization
+    asset_table = Table(show_header=False, title="Asset Structure")
+    asset_table.add_column("Item", justify="left", style="dim")
+    asset_table.add_column("Percentage", justify="right")
+    asset_table.add_column("Visualization", justify="left", width=30)
+    
+    # Calculate total assets for the proportional bars
+    total_assets = balance_sheet.total_assets.value
+    
+    # Add all asset items
+    asset_table.add_row("Current Assets:", "", style="bold")
+    
+    for asset in balance_sheet.current_assets.items:
+        if total_assets > 0:
+            percentage = (asset.value / total_assets) * 100
+            bar_width = int(30 * percentage / 100)
+            bar = "[green]" + "█" * bar_width + "[/green]"
+        else:
+            percentage = 0
+            bar = ""
+            
+        asset_table.add_row(
+            f"  {asset.name}",
+            f"{percentage:.1f}%",
+            bar
+        )
+    
+    asset_table.add_row("", "", "")  # Empty row as separator
+    asset_table.add_row("Non-Current Assets:", "", style="bold")
+    
+    for asset in balance_sheet.non_current_assets.items:
+        if total_assets > 0:
+            percentage = (asset.value / total_assets) * 100
+            bar_width = int(30 * percentage / 100)
+            bar = "[blue]" + "█" * bar_width + "[/blue]"
+        else:
+            percentage = 0
+            bar = ""
+            
+        asset_table.add_row(
+            f"  {asset.name}",
+            f"{percentage:.1f}%",
+            bar
+        )
+    
+    # Create liabilities and equity structure visualization
+    le_table = Table(show_header=False, title="Liabilities & Equity Structure")
+    le_table.add_column("Item", justify="left", style="dim")
+    le_table.add_column("Percentage", justify="right")
+    le_table.add_column("Visualization", justify="left", width=30)
+    
+    # Add all liability items
+    le_table.add_row("Current Liabilities:", "", style="bold")
+    
+    for liability in balance_sheet.current_liabilities.items:
+        if total_assets > 0:
+            percentage = (liability.value / total_assets) * 100
+            bar_width = int(30 * percentage / 100)
+            bar = "[red]" + "█" * bar_width + "[/red]"
+        else:
+            percentage = 0
+            bar = ""
+            
+        le_table.add_row(
+            f"  {liability.name}",
+            f"{percentage:.1f}%",
+            bar
+        )
+    
+    le_table.add_row("", "", "")  # Empty row as separator
+    le_table.add_row("Non-Current Liabilities:", "", style="bold")
+    
+    for liability in balance_sheet.non_current_liabilities.items:
+        if total_assets > 0:
+            percentage = (liability.value / total_assets) * 100
+            bar_width = int(30 * percentage / 100)
+            bar = "[magenta]" + "█" * bar_width + "[/magenta]"
+        else:
+            percentage = 0
+            bar = ""
+            
+        le_table.add_row(
+            f"  {liability.name}",
+            f"{percentage:.1f}%",
+            bar
+        )
+    
+    le_table.add_row("", "", "")  # Empty row as separator
+    le_table.add_row("Shareholders' Equity:", "", style="bold")
+    
+    for equity in balance_sheet.shareholders_equity.items:
+        if total_assets > 0:
+            # Handle negative values (like treasury stock)
+            percentage = (equity.value / total_assets) * 100
+            bar_width = int(30 * abs(percentage) / 100)
+            
+            if percentage < 0:
+                bar = "[yellow]" + "▒" * bar_width + "[/yellow]"  # Use different pattern for negative values
+            else:
+                bar = "[yellow]" + "█" * bar_width + "[/yellow]"
+        else:
+            percentage = 0
+            bar = ""
+            
+        le_table.add_row(
+            f"  {equity.name}",
+            f"{percentage:.1f}%",
+            bar
+        )
+    
+    # Display side by side
+    console.print(Columns([asset_table, le_table]))
+    
+    # Display summary of structure
+    console.print("\n[bold]Balance Sheet Summary:[/bold]")
+    
+    # Calculate main percentages
+    ca_percent = (balance_sheet.current_assets.value / total_assets * 100) if total_assets > 0 else 0
+    nca_percent = (balance_sheet.non_current_assets.value / total_assets * 100) if total_assets > 0 else 0
+    cl_percent = (balance_sheet.current_liabilities.value / total_assets * 100) if total_assets > 0 else 0
+    ncl_percent = (balance_sheet.non_current_liabilities.value / total_assets * 100) if total_assets > 0 else 0
+    equity_percent = (balance_sheet.shareholders_equity.value / total_assets * 100) if total_assets > 0 else 0
+    
+    summary_table = Table(show_header=False)
+    summary_table.add_column("Component")
+    summary_table.add_column("Amount", justify="right")
+    summary_table.add_column("Percentage", justify="right")
+    
+    summary_table.add_row(
+        "[bold green]Current Assets[/bold green]",
+        balance_sheet.current_assets.total.value_str,
+        f"{ca_percent:.1f}%"
+    )
+    
+    summary_table.add_row(
+        "[bold blue]Non-Current Assets[/bold blue]",
+        balance_sheet.non_current_assets.total.value_str,
+        f"{nca_percent:.1f}%"
+    )
+    
+    summary_table.add_row(
+        "[bold red]Current Liabilities[/bold red]",
+        balance_sheet.current_liabilities.total.value_str,
+        f"{cl_percent:.1f}%"
+    )
+    
+    summary_table.add_row(
+        "[bold magenta]Non-Current Liabilities[/bold magenta]",
+        balance_sheet.non_current_liabilities.total.value_str,
+        f"{ncl_percent:.1f}%"
+    )
+    
+    summary_table.add_row(
+        "[bold yellow]Shareholders' Equity[/bold yellow]",
+        balance_sheet.shareholders_equity.total.value_str,
+        f"{equity_percent:.1f}%"
+    )
+    
+    console.print(summary_table)
+    
+    # Display financial health indicators
+    console.print("\n[bold]Financial Health Indicators:[/bold]")
+    
+    # Working capital
+    working_capital = balance_sheet.current_assets.value - balance_sheet.current_liabilities.value
+    working_capital_str = f"{working_capital:,.2f}"
+    
+    console.print(f"Working Capital: {working_capital_str} ({balance_sheet.current_ratio.value_str}x current ratio)")
+    
+    # Debt structure
+    if balance_sheet.total_liabilities.value > 0:
+        short_term_percent = balance_sheet.current_liabilities.value / balance_sheet.total_liabilities.value * 100
+        long_term_percent = balance_sheet.non_current_liabilities.value / balance_sheet.total_liabilities.value * 100
+        
+        console.print(f"Debt Structure: {short_term_percent:.1f}% short-term, {long_term_percent:.1f}% long-term")
+    
+    # Leverage
+    console.print(f"Leverage: {balance_sheet.debt_to_equity.value_str}x debt-to-equity ratio")
+
+
+def display_cash_flow(cash_flow: CashFlow, detailed: bool = False):
+    """
+    Display a cash flow statement in the terminal.
+    
+    Args:
+        cash_flow: The CashFlow object to display
+        detailed: If True, show more detailed breakdown
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", cash_flow.symbol.upper())
+    header.add_row("Fiscal Period:", f"{cash_flow.fiscal_period} ({cash_flow.fiscal_date})")
+    header.add_row("Currency:", cash_flow.currency)
+    
+    console.print(Panel(header, title="Cash Flow Statement", expand=False))
+    
+    # Create main table
+    table = Table(show_header=True, header_style="bold")
+    
+    table.add_column("Item", style="dim")
+    table.add_column("Amount", justify="right")
+    
+    # Beginning Cash Position
+    table.add_row(
+        cash_flow.beginning_cash.name,
+        cash_flow.beginning_cash.value_str,
+        style="bold"
+    )
+    
+    # Operating Activities Section
+    table.add_row("", "", style="dim")  # Empty row as separator
+    table.add_row("OPERATING ACTIVITIES", "", style="bold")
+    
+    # Only show details if detailed view is requested or if there are few items
+    show_operating_details = detailed or len(cash_flow.operating_activities.items) <= 5
+    
+    if show_operating_details:
+        # Show all operating activities
+        for item in cash_flow.operating_activities.items:
+            style = None
+            # Add plus sign for positive values (cash inflows)
+            value_str = item.value_str
+            if item.value > 0:
+                style = "green"
+                value_str = f"+{value_str}"
+            elif item.value < 0:
+                style = "red"
+                
+            table.add_row(f"  {item.name}", value_str, style=style)
+    else:
+        # Show only key operating activities
+        important_items = ["Net Income", "Depreciation and Amortization", "Change in Working Capital"]
+        for item in cash_flow.operating_activities.items:
+            if item.name in important_items:
+                style = None
+                value_str = item.value_str
+                if item.value > 0:
+                    style = "green"
+                    value_str = f"+{value_str}"
+                elif item.value < 0:
+                    style = "red"
+                    
+                table.add_row(f"  {item.name}", value_str, style=style)
+        
+        # Show a summary line for other items
+        table.add_row("  Other Operating Activities", "...", style="dim")
+    
+    # Net Cash from Operating Activities
+    net_operating_style = "bold green" if cash_flow.operating_activities.value >= 0 else "bold red"
+    value_str = cash_flow.operating_activities.total.value_str
+    if cash_flow.operating_activities.value > 0:
+        value_str = f"+{value_str}"
+        
+    table.add_row(
+        cash_flow.operating_activities.total.name,
+        value_str,
+        style=net_operating_style
+    )
+    
+    # Investing Activities Section
+    table.add_row("", "", style="dim")  # Empty row as separator
+    table.add_row("INVESTING ACTIVITIES", "", style="bold")
+    
+    # Show all investing activities (usually not too many)
+    for item in cash_flow.investing_activities.items:
+        style = None
+        value_str = item.value_str
+        if item.value > 0:
+            style = "green"
+            value_str = f"+{value_str}"
+        elif item.value < 0:
+            style = "red"
+            
+        table.add_row(f"  {item.name}", value_str, style=style)
+    
+    # Net Cash from Investing Activities
+    net_investing_style = "bold green" if cash_flow.investing_activities.value >= 0 else "bold red"
+    value_str = cash_flow.investing_activities.total.value_str
+    if cash_flow.investing_activities.value > 0:
+        value_str = f"+{value_str}"
+        
+    table.add_row(
+        cash_flow.investing_activities.total.name,
+        value_str,
+        style=net_investing_style
+    )
+    
+    # Financing Activities Section
+    table.add_row("", "", style="dim")  # Empty row as separator
+    table.add_row("FINANCING ACTIVITIES", "", style="bold")
+    
+    show_financing_details = detailed or len(cash_flow.financing_activities.items) <= 5
+    
+    if show_financing_details:
+        # Show all financing activities
+        for item in cash_flow.financing_activities.items:
+            style = None
+            value_str = item.value_str
+            if item.value > 0:
+                style = "green"
+                value_str = f"+{value_str}"
+            elif item.value < 0:
+                style = "red"
+                
+            table.add_row(f"  {item.name}", value_str, style=style)
+    else:
+        # Show only key financing activities
+        important_items = ["Debt Repayment", "Dividends Paid", "Common Stock Repurchased"]
+        for item in cash_flow.financing_activities.items:
+            if item.name in important_items:
+                style = None
+                value_str = item.value_str
+                if item.value > 0:
+                    style = "green"
+                    value_str = f"+{value_str}"
+                elif item.value < 0:
+                    style = "red"
+                    
+                table.add_row(f"  {item.name}", value_str, style=style)
+        
+        # Show a summary line for other items
+        table.add_row("  Other Financing Activities", "...", style="dim")
+    
+    # Net Cash from Financing Activities
+    net_financing_style = "bold green" if cash_flow.financing_activities.value >= 0 else "bold red"
+    value_str = cash_flow.financing_activities.total.value_str
+    if cash_flow.financing_activities.value > 0:
+        value_str = f"+{value_str}"
+        
+    table.add_row(
+        cash_flow.financing_activities.total.name,
+        value_str,
+        style=net_financing_style
+    )
+    
+    # Net Change in Cash Position
+    table.add_row("", "", style="dim")  # Empty row as separator
+    
+    net_change_style = "bold green" if cash_flow.net_change_in_cash.value >= 0 else "bold red"
+    value_str = cash_flow.net_change_in_cash.value_str
+    if cash_flow.net_change_in_cash.value > 0:
+        value_str = f"+{value_str}"
+        
+    table.add_row(
+        cash_flow.net_change_in_cash.name,
+        value_str,
+        style=net_change_style
+    )
+    
+    # Ending Cash Position
+    table.add_row(
+        cash_flow.ending_cash.name,
+        cash_flow.ending_cash.value_str,
+        style="bold"
+    )
+    
+    # Free Cash Flow (if available)
+    if cash_flow.free_cash_flow and cash_flow.free_cash_flow.value_str != "N/A":
+        table.add_row("", "", style="dim")  # Empty row as separator
+        
+        free_cash_flow_style = "bold green" if cash_flow.free_cash_flow.value >= 0 else "bold red"
+        value_str = cash_flow.free_cash_flow.value_str
+        if cash_flow.free_cash_flow.value > 0:
+            value_str = f"+{value_str}"
+            
+        table.add_row(
+            cash_flow.free_cash_flow.name,
+            value_str,
+            style=free_cash_flow_style
+        )
+    
+    console.print(table)
+    
+    # If detailed view, show a summary of cash flow sources
+    if detailed:
+        console.print("\n[bold]Summary of Cash Sources and Uses:[/bold]")
+        
+        summary_table = Table(show_header=True, header_style="bold")
+        summary_table.add_column("Cash Flow Source")
+        summary_table.add_column("Amount", justify="right")
+        summary_table.add_column("% of Total Inflows", justify="right")
+        
+        # Calculate total positive cash flow (sum of all positive activities)
+        total_inflow = (
+            max(0, cash_flow.operating_activities.value) +
+            max(0, cash_flow.investing_activities.value) +
+            max(0, cash_flow.financing_activities.value)
+        )
+        
+        # Add rows for each activity
+        if cash_flow.operating_activities.value > 0:
+            operating_percent = (cash_flow.operating_activities.value / total_inflow * 100) if total_inflow > 0 else 0
+            summary_table.add_row(
+                "Operating Activities", 
+                f"+{cash_flow.operating_activities.total.value_str}",
+                f"{operating_percent:.1f}%",
+                style="green"
+            )
+        
+        if cash_flow.investing_activities.value > 0:
+            investing_percent = (cash_flow.investing_activities.value / total_inflow * 100) if total_inflow > 0 else 0
+            summary_table.add_row(
+                "Investing Activities", 
+                f"+{cash_flow.investing_activities.total.value_str}",
+                f"{investing_percent:.1f}%",
+                style="green"
+            )
+        
+        if cash_flow.financing_activities.value > 0:
+            financing_percent = (cash_flow.financing_activities.value / total_inflow * 100) if total_inflow > 0 else 0
+            summary_table.add_row(
+                "Financing Activities", 
+                f"+{cash_flow.financing_activities.total.value_str}",
+                f"{financing_percent:.1f}%",
+                style="green"
+            )
+        
+        summary_table.add_row(
+            "Total Cash Inflows", 
+            f"+{total_inflow:,.2f}",
+            "100.0%",
+            style="bold green"
+        )
+        
+        # Calculate total negative cash flow (sum of all negative activities)
+        total_outflow = abs(
+            min(0, cash_flow.operating_activities.value) +
+            min(0, cash_flow.investing_activities.value) +
+            min(0, cash_flow.financing_activities.value)
+        )
+        
+        summary_table.add_row("", "", "")  # Empty row
+        
+        if cash_flow.operating_activities.value < 0:
+            operating_percent = (abs(cash_flow.operating_activities.value) / total_outflow * 100) if total_outflow > 0 else 0
+            summary_table.add_row(
+                "Operating Activities", 
+                f"({abs(cash_flow.operating_activities.value):,.2f})",
+                f"{operating_percent:.1f}%",
+                style="red"
+            )
+        
+        if cash_flow.investing_activities.value < 0:
+            investing_percent = (abs(cash_flow.investing_activities.value) / total_outflow * 100) if total_outflow > 0 else 0
+            summary_table.add_row(
+                "Investing Activities", 
+                f"({abs(cash_flow.investing_activities.value):,.2f})",
+                f"{investing_percent:.1f}%",
+                style="red"
+            )
+            
+        if cash_flow.financing_activities.value < 0:
+            financing_percent = (abs(cash_flow.financing_activities.value) / total_outflow * 100) if total_outflow > 0 else 0
+            summary_table.add_row(
+                "Financing Activities", 
+                f"({abs(cash_flow.financing_activities.value):,.2f})",
+                f"{financing_percent:.1f}%",
+                style="red"
+            )
+            
+        summary_table.add_row(
+            "Total Cash Outflows", 
+            f"({total_outflow:,.2f})",
+            "100.0%",
+            style="bold red"
+        )
+        
+        console.print(summary_table)
+
+
+def display_cash_flow_comparison(statements: List[CashFlow], focus: str = 'full'):
+    """
+    Display a comparison of multiple cash flow statements side by side.
+    
+    Args:
+        statements: List of CashFlow objects to compare
+        focus: View mode - 'full', 'operating', 'investing', 'financing', or 'summary'
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    if not statements:
+        console.print("[bold red]No cash flow statements to display[/bold red]")
+        return
+    
+    # Sort statements by date (most recent first)
+    sorted_statements = sorted(statements, key=lambda s: s.fiscal_date, reverse=True)
+    
+    # Create header
+    symbol = sorted_statements[0].symbol.upper()
+    period_type = sorted_statements[0].fiscal_period
+    
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", symbol)
+    header.add_row("Statement Type:", f"{period_type} Cash Flow Statements")
+    header.add_row("Currency:", sorted_statements[0].currency)
+    header.add_row("Periods:", ", ".join(s.fiscal_date for s in sorted_statements))
+    
+    if focus == 'operating':
+        title = f"Cash Flow Comparison - Operating Activities"
+    elif focus == 'investing':
+        title = f"Cash Flow Comparison - Investing Activities" 
+    elif focus == 'financing':
+        title = f"Cash Flow Comparison - Financing Activities"
+    elif focus == 'summary':
+        title = f"Cash Flow Comparison - Summary View"
+    else:
+        title = f"Cash Flow Comparison"
+        
+    console.print(Panel(header, title=title, expand=False))
+    
+    # Create main comparison table
+    table = Table(show_header=True, header_style="bold")
+    
+    # Add columns - first for line items, then one for each period
+    table.add_column("Item", style="dim")
+    
+    for statement in sorted_statements:
+        # Use fiscal date as column header
+        table.add_column(statement.fiscal_date, justify="right")
+    
+    # Show different sections based on focus
+    if focus in ['full', 'summary']:
+        # Show beginning cash position
+        table.add_row(
+            "Beginning Cash",
+            *[s.beginning_cash.value_str for s in sorted_statements],
+            style="bold"
+        )
+        
+    if focus in ['full', 'operating', 'summary']:
+        # OPERATING ACTIVITIES SECTION
+        if focus != 'operating':
+            table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+            
+        table.add_row("OPERATING ACTIVITIES", *["" for _ in sorted_statements], style="bold")
+        
+        if focus == 'operating' or focus == 'full':
+            # Find all unique operating activity item names
+            operating_item_names = set()
+            for statement in sorted_statements:
+                operating_item_names.update(item.name for item in statement.operating_activities.items)
+                
+            # Add rows for each operating activity item
+            for name in sorted(operating_item_names):
+                values = []
+                
+                for statement in sorted_statements:
+                    # Find matching item
+                    item = next((i for i in statement.operating_activities.items if i.name == name), None)
+                    if item:
+                        value_str = item.value_str
+                        if item.value > 0:
+                            value_str = f"+{value_str}"
+                        values.append(value_str)
+                    else:
+                        values.append("N/A")
+                        
+                table.add_row(f"  {name}", *values)
+            
+        # Net Cash from Operating Activities
+        values = []
+        for statement in sorted_statements:
+            value = statement.operating_activities.value
+            value_str = statement.operating_activities.total.value_str
+            if value > 0:
+                value_str = f"+{value_str}"
+            values.append(value_str)
+            
+        table.add_row(
+            "Net Cash from Operating",
+            *values,
+            style="bold green"
+        )
+        
+    if focus in ['full', 'investing', 'summary']:
+        # INVESTING ACTIVITIES SECTION
+        if focus != 'investing':
+            table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+            
+        table.add_row("INVESTING ACTIVITIES", *["" for _ in sorted_statements], style="bold")
+        
+        if focus == 'investing' or focus == 'full':
+            # Find all unique investing activity item names
+            investing_item_names = set()
+            for statement in sorted_statements:
+                investing_item_names.update(item.name for item in statement.investing_activities.items)
+                
+            # Add rows for each investing activity item
+            for name in sorted(investing_item_names):
+                values = []
+                
+                for statement in sorted_statements:
+                    # Find matching item
+                    item = next((i for i in statement.investing_activities.items if i.name == name), None)
+                    if item:
+                        value_str = item.value_str
+                        if item.value > 0:
+                            value_str = f"+{value_str}"
+                        values.append(value_str)
+                    else:
+                        values.append("N/A")
+                        
+                table.add_row(f"  {name}", *values)
+            
+        # Net Cash from Investing Activities
+        values = []
+        for statement in sorted_statements:
+            value = statement.investing_activities.value
+            value_str = statement.investing_activities.total.value_str
+            if value > 0:
+                value_str = f"+{value_str}"
+            values.append(value_str)
+            
+        table.add_row(
+            "Net Cash from Investing",
+            *values,
+            style="bold"
+        )
+        
+    if focus in ['full', 'financing', 'summary']:
+        # FINANCING ACTIVITIES SECTION
+        if focus != 'financing':
+            table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+            
+        table.add_row("FINANCING ACTIVITIES", *["" for _ in sorted_statements], style="bold")
+        
+        if focus == 'financing' or focus == 'full':
+            # Find all unique financing activity item names
+            financing_item_names = set()
+            for statement in sorted_statements:
+                financing_item_names.update(item.name for item in statement.financing_activities.items)
+                
+            # Add rows for each financing activity item
+            for name in sorted(financing_item_names):
+                values = []
+                
+                for statement in sorted_statements:
+                    # Find matching item
+                    item = next((i for i in statement.financing_activities.items if i.name == name), None)
+                    if item:
+                        value_str = item.value_str
+                        if item.value > 0:
+                            value_str = f"+{value_str}"
+                        values.append(value_str)
+                    else:
+                        values.append("N/A")
+                        
+                table.add_row(f"  {name}", *values)
+            
+        # Net Cash from Financing Activities
+        values = []
+        for statement in sorted_statements:
+            value = statement.financing_activities.value
+            value_str = statement.financing_activities.total.value_str
+            if value > 0:
+                value_str = f"+{value_str}"
+            values.append(value_str)
+            
+        table.add_row(
+            "Net Cash from Financing",
+            *values,
+            style="bold"
+        )
+    
+    if focus in ['full', 'summary']:
+        # Net Change in Cash
+        table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+        
+        values = []
+        for statement in sorted_statements:
+            value = statement.net_change_in_cash.value
+            value_str = statement.net_change_in_cash.value_str
+            if value > 0:
+                value_str = f"+{value_str}"
+            values.append(value_str)
+            
+        table.add_row(
+            "Net Change in Cash",
+            *values,
+            style="bold"
+        )
+        
+        # Ending Cash
+        table.add_row(
+            "Ending Cash",
+            *[s.ending_cash.value_str for s in sorted_statements],
+            style="bold"
+        )
+        
+        # Free Cash Flow
+        if any(s.free_cash_flow and s.free_cash_flow.value_str != "N/A" for s in sorted_statements):
+            table.add_row("", *["" for _ in sorted_statements], style="dim")  # Empty row
+            
+            values = []
+            for statement in sorted_statements:
+                if statement.free_cash_flow and statement.free_cash_flow.value_str != "N/A":
+                    value = statement.free_cash_flow.value
+                    value_str = statement.free_cash_flow.value_str
+                    if value > 0:
+                        value_str = f"+{value_str}"
+                    values.append(value_str)
+                else:
+                    values.append("N/A")
+                    
+            table.add_row(
+                "Free Cash Flow",
+                *values,
+                style="bold"
+            )
+    
+    console.print(table)
+
+
+def display_cash_flow_analysis(cash_flows: List[CashFlow]):
+    """
+    Display an analysis of cash flow trends over time.
+    
+    Args:
+        cash_flows: List of CashFlow objects to analyze
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.columns import Columns
+
+    console = Console()
+    
+    if not cash_flows:
+        console.print("[bold red]No cash flow statements to analyze[/bold red]")
+        return
+    
+    # Sort statements by date (oldest to newest for trend analysis)
+    sorted_statements = sorted(cash_flows, key=lambda s: s.fiscal_date)
+    
+    # Create header
+    symbol = sorted_statements[0].symbol.upper()
+    period_type = sorted_statements[0].fiscal_period
+    date_range = f"{sorted_statements[0].fiscal_date} to {sorted_statements[-1].fiscal_date}"
+    
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", symbol)
+    header.add_row("Statement Type:", f"{period_type} Cash Flow")
+    header.add_row("Analysis Period:", date_range)
+    header.add_row("Currency:", sorted_statements[0].currency)
+    
+    console.print(Panel(header, title="Cash Flow Analysis", expand=False))
+    
+    # Create a table to show cash flow trends
+    trend_table = Table(title="Cash Flow Trends")
+    trend_table.add_column("Cash Flow Category", style="dim")
+    trend_table.add_column("Trend", justify="center")
+    trend_table.add_column("Average Value", justify="right")
+    trend_table.add_column("Growth", justify="right")
+    
+    # Calculate trends for operating cash flow
+    operating_values = [s.operating_activities.value for s in sorted_statements]
+    operating_avg = sum(operating_values) / len(operating_values) if operating_values else 0
+    
+    # Determine trend direction
+    if len(operating_values) >= 2:
+        operating_trend = operating_values[-1] - operating_values[0]
+        if operating_trend > 0:
+            operating_trend_str = "[green]↑ Increasing[/green]"
+            operating_growth = f"[green]+{(operating_trend / abs(operating_values[0]) * 100) if operating_values[0] != 0 else float('inf'):.1f}%[/green]"
+        elif operating_trend < 0:
+            operating_trend_str = "[red]↓ Decreasing[/red]"
+            operating_growth = f"[red]{(operating_trend / abs(operating_values[0]) * 100) if operating_values[0] != 0 else float('-inf'):.1f}%[/red]"
+        else:
+            operating_trend_str = "[yellow]→ Stable[/yellow]"
+            operating_growth = "[yellow]0.0%[/yellow]"
+            
+        # Check consistency
+        trend_consistent = all(a <= b for a, b in zip(operating_values, operating_values[1:])) or \
+                          all(a >= b for a, b in zip(operating_values, operating_values[1:]))
+                          
+        if not trend_consistent:
+            operating_trend_str += " [yellow](Fluctuating)[/yellow]"
+    else:
+        operating_trend_str = "Insufficient Data"
+        operating_growth = "N/A"
+    
+    trend_table.add_row(
+        "Operating Cash Flow",
+        operating_trend_str,
+        f"{operating_avg:,.2f}",
+        operating_growth
+    )
+    
+    # Calculate trends for investing cash flow
+    investing_values = [s.investing_activities.value for s in sorted_statements]
+    investing_avg = sum(investing_values) / len(investing_values) if investing_values else 0
+    
+    # Determine trend direction
+    if len(investing_values) >= 2:
+        investing_trend = investing_values[-1] - investing_values[0]
+        if investing_trend > 0:
+            investing_trend_str = "[green]↑ Increasing[/green]"
+            investing_growth = f"[green]+{(investing_trend / abs(investing_values[0]) * 100) if investing_values[0] != 0 else float('inf'):.1f}%[/green]"
+        elif investing_trend < 0:
+            investing_trend_str = "[red]↓ Decreasing[/red]"
+            investing_growth = f"[red]{(investing_trend / abs(investing_values[0]) * 100) if investing_values[0] != 0 else float('-inf'):.1f}%[/red]"
+        else:
+            investing_trend_str = "[yellow]→ Stable[/yellow]"
+            investing_growth = "[yellow]0.0%[/yellow]"
+            
+        # Check consistency
+        trend_consistent = all(a <= b for a, b in zip(investing_values, investing_values[1:])) or \
+                          all(a >= b for a, b in zip(investing_values, investing_values[1:]))
+                          
+        if not trend_consistent:
+            investing_trend_str += " [yellow](Fluctuating)[/yellow]"
+    else:
+        investing_trend_str = "Insufficient Data"
+        investing_growth = "N/A"
+    
+    trend_table.add_row(
+        "Investing Cash Flow",
+        investing_trend_str,
+        f"{investing_avg:,.2f}",
+        investing_growth
+    )
+    
+    # Calculate trends for financing cash flow
+    financing_values = [s.financing_activities.value for s in sorted_statements]
+    financing_avg = sum(financing_values) / len(financing_values) if financing_values else 0
+    
+    # Determine trend direction
+    if len(financing_values) >= 2:
+        financing_trend = financing_values[-1] - financing_values[0]
+        if financing_trend > 0:
+            financing_trend_str = "[green]↑ Increasing[/green]"
+            financing_growth = f"[green]+{(financing_trend / abs(financing_values[0]) * 100) if financing_values[0] != 0 else float('inf'):.1f}%[/green]"
+        elif financing_trend < 0:
+            financing_trend_str = "[red]↓ Decreasing[/red]"
+            financing_growth = f"[red]{(financing_trend / abs(financing_values[0]) * 100) if financing_values[0] != 0 else float('-inf'):.1f}%[/red]"
+        else:
+            financing_trend_str = "[yellow]→ Stable[/yellow]"
+            financing_growth = "[yellow]0.0%[/yellow]"
+            
+        # Check consistency
+        trend_consistent = all(a <= b for a, b in zip(financing_values, financing_values[1:])) or \
+                          all(a >= b for a, b in zip(financing_values, financing_values[1:]))
+                          
+        if not trend_consistent:
+            financing_trend_str += " [yellow](Fluctuating)[/yellow]"
+    else:
+        financing_trend_str = "Insufficient Data"
+        financing_growth = "N/A"
+    
+    trend_table.add_row(
+        "Financing Cash Flow",
+        financing_trend_str,
+        f"{financing_avg:,.2f}",
+        financing_growth
+    )
+    
+    # Calculate trends for free cash flow (if available)
+    if any(s.free_cash_flow and s.free_cash_flow.value_str != "N/A" for s in sorted_statements):
+        fcf_values = [s.free_cash_flow.value for s in sorted_statements 
+                     if s.free_cash_flow and s.free_cash_flow.value_str != "N/A"]
+        
+        if fcf_values:
+            fcf_avg = sum(fcf_values) / len(fcf_values)
+            
+            # Determine trend direction
+            if len(fcf_values) >= 2:
+                fcf_trend = fcf_values[-1] - fcf_values[0]
+                if fcf_trend > 0:
+                    fcf_trend_str = "[green]↑ Increasing[/green]"
+                    fcf_growth = f"[green]+{(fcf_trend / abs(fcf_values[0]) * 100) if fcf_values[0] != 0 else float('inf'):.1f}%[/green]"
+                elif fcf_trend < 0:
+                    fcf_trend_str = "[red]↓ Decreasing[/red]"
+                    fcf_growth = f"[red]{(fcf_trend / abs(fcf_values[0]) * 100) if fcf_values[0] != 0 else float('-inf'):.1f}%[/red]"
+                else:
+                    fcf_trend_str = "[yellow]→ Stable[/yellow]"
+                    fcf_growth = "[yellow]0.0%[/yellow]"
+                    
+                # Check consistency
+                trend_consistent = all(a <= b for a, b in zip(fcf_values, fcf_values[1:])) or \
+                                  all(a >= b for a, b in zip(fcf_values, fcf_values[1:]))
+                                  
+                if not trend_consistent:
+                    fcf_trend_str += " [yellow](Fluctuating)[/yellow]"
+            else:
+                fcf_trend_str = "Insufficient Data"
+                fcf_growth = "N/A"
+                
+            trend_table.add_row(
+                "Free Cash Flow",
+                fcf_trend_str,
+                f"{fcf_avg:,.2f}",
+                fcf_growth
+            )
+    
+    # Cash position change
+    beginning_cash = [s.beginning_cash.value for s in sorted_statements]
+    ending_cash = [s.ending_cash.value for s in sorted_statements]
+    
+    if beginning_cash and ending_cash:
+        cash_change = ending_cash[-1] - beginning_cash[0]
+        cash_pct_change = (cash_change / beginning_cash[0] * 100) if beginning_cash[0] != 0 else float('inf')
+        
+        if cash_change > 0:
+            cash_trend_str = f"[green]Increased by {cash_change:,.2f} ({cash_pct_change:.1f}%)[/green]"
+        elif cash_change < 0:
+            cash_trend_str = f"[red]Decreased by {abs(cash_change):,.2f} ({cash_pct_change:.1f}%)[/red]"
+        else:
+            cash_trend_str = "[yellow]No change[/yellow]"
+            
+        trend_table.add_row(
+            "Cash Position",
+            cash_trend_str,
+            f"Begin: {beginning_cash[0]:,.2f}, End: {ending_cash[-1]:,.2f}",
+            f"{cash_pct_change:+.1f}%"
+        )
+    
+    console.print(trend_table)
+    
+    # Create visualization of cash flow breakdown
+    if len(sorted_statements) > 0:
+        # Use the most recent statement for the breakdown
+        latest = sorted_statements[-1]
+        
+        console.print("\n[bold]Cash Flow Breakdown (Latest Period):[/bold]")
+        
+        breakdown_table = Table()
+        breakdown_table.add_column("Category")
+        breakdown_table.add_column("Amount", justify="right")
+        breakdown_table.add_column("Visualization", width=40, justify="left")
+        
+        # Calculate the maximum absolute value for scaling
+        max_value = max(
+            abs(latest.operating_activities.value),
+            abs(latest.investing_activities.value),
+            abs(latest.financing_activities.value)
+        )
+        
+        # Operating Cash Flow
+        op_value = latest.operating_activities.value
+        op_str = latest.operating_activities.total.value_str
+        if op_value != 0:
+            bar_len = int(30 * abs(op_value) / max_value) if max_value > 0 else 0
+            if op_value > 0:
+                bar = "[green]" + "█" * bar_len + "[/green]"
+                op_str = "+" + op_str
+            else:
+                bar = "[red]" + "█" * bar_len + "[/red]"
+        else:
+            bar = ""
+            
+        breakdown_table.add_row(
+            "Operating Activities",
+            op_str,
+            bar
+        )
+        
+        # Investing Cash Flow
+        inv_value = latest.investing_activities.value
+        inv_str = latest.investing_activities.total.value_str
+        if inv_value != 0:
+            bar_len = int(30 * abs(inv_value) / max_value) if max_value > 0 else 0
+            if inv_value > 0:
+                bar = "[green]" + "█" * bar_len + "[/green]"
+                inv_str = "+" + inv_str
+            else:
+                bar = "[red]" + "█" * bar_len + "[/red]"
+        else:
+            bar = ""
+            
+        breakdown_table.add_row(
+            "Investing Activities",
+            inv_str,
+            bar
+        )
+        
+        # Financing Cash Flow
+        fin_value = latest.financing_activities.value
+        fin_str = latest.financing_activities.total.value_str
+        if fin_value != 0:
+            bar_len = int(30 * abs(fin_value) / max_value) if max_value > 0 else 0
+            if fin_value > 0:
+                bar = "[green]" + "█" * bar_len + "[/green]"
+                fin_str = "+" + fin_str
+            else:
+                bar = "[red]" + "█" * bar_len + "[/red]"
+        else:
+            bar = ""
+            
+        breakdown_table.add_row(
+            "Financing Activities",
+            fin_str,
+            bar
+        )
+        
+        # Net Change
+        net_value = latest.net_change_in_cash.value
+        net_str = latest.net_change_in_cash.value_str
+        if net_value != 0:
+            bar_len = int(30 * abs(net_value) / max_value) if max_value > 0 else 0
+            if net_value > 0:
+                bar = "[green]" + "█" * bar_len + "[/green]"
+                net_str = "+" + net_str
+            else:
+                bar = "[red]" + "█" * bar_len + "[/red]"
+        else:
+            bar = ""
+            
+        breakdown_table.add_row(
+            "Net Change in Cash",
+            net_str,
+            bar,
+            style="bold"
+        )
+        
+        console.print(breakdown_table)
+    
+    # Provide insights based on cash flow patterns
+    console.print("\n[bold]Cash Flow Analysis Insights:[/bold]")
+    
+    # Analyze operating cash flow trend
+    if len(operating_values) >= 2:
+        console.print("\n[bold]Operating Cash Flow:[/bold]")
+        if all(v > 0 for v in operating_values):
+            console.print("[green]✓ Consistently positive operating cash flow indicates strong core business performance.[/green]")
+        elif operating_values[-1] > 0 and operating_trend > 0:
+            console.print("[green]✓ Improving operating cash flow suggests strengthening business operations.[/green]")
+        elif operating_values[-1] < 0:
+            console.print("[red]✗ Negative operating cash flow indicates the core business is not generating cash.[/red]")
+        
+        # Operating cash flow vs net income (if available)
+        net_incomes = [s.operating_activities.items[0].value for s in sorted_statements 
+                      if s.operating_activities.items and s.operating_activities.items[0].name == "Net Income"]
+        
+        if len(net_incomes) == len(operating_values):
+            ocf_vs_ni = [ocf/ni if ni != 0 else float('inf') for ocf, ni in zip(operating_values, net_incomes)]
+            
+            if all(ratio > 1 for ratio in ocf_vs_ni if ratio != float('inf')):
+                console.print("[green]✓ Operating cash flow exceeds net income, indicating high earnings quality.[/green]")
+            elif all(ratio < 1 for ratio in ocf_vs_ni if ratio != float('inf')):
+                console.print("[red]✗ Operating cash flow consistently below net income, potential earnings quality concern.[/red]")
+    
+    # Analyze investing cash flow trend
+    if len(investing_values) >= 2:
+        console.print("\n[bold]Investing Cash Flow:[/bold]")
+        
+        if all(v < 0 for v in investing_values):
+            console.print("[green]✓ Consistent investment in long-term assets suggests growth focus.[/green]")
+        
+        if investing_trend < 0:
+            console.print("[yellow]⚠ Increasing investing cash outflow could indicate expansion or capital refreshment.[/yellow]")
+    
+    # Analyze financing cash flow trend
+    if len(financing_values) >= 2:
+        console.print("\n[bold]Financing Cash Flow:[/bold]")
+        
+        if all(v < 0 for v in financing_values):
+            console.print("[green]✓ Consistent negative financing cash flow may indicate debt repayment or shareholder returns.[/green]")
+        
+        if financing_trend > 0 and financing_values[-1] > 0:
+            console.print("[yellow]⚠ Increasing reliance on financing cash inflows could indicate increased leverage.[/yellow]")
+    
+    # Overall cash position health
+    if len(sorted_statements) >= 2:
+        console.print("\n[bold]Cash Position Health:[/bold]")
+        
+        latest = sorted_statements[-1]
+        if latest.net_change_in_cash.value > 0:
+            console.print("[green]✓ Positive net change in cash indicates overall healthy cash generation.[/green]")
+        else:
+            console.print("[yellow]⚠ Negative net change in cash should be monitored for future periods.[/yellow]")
+        
+        # Free cash flow assessment
+        if latest.free_cash_flow and latest.free_cash_flow.value_str != "N/A":
+            if latest.free_cash_flow.value > 0:
+                console.print("[green]✓ Positive free cash flow indicates the company can fund operations and investments internally.[/green]")
+            else:
+                console.print("[red]✗ Negative free cash flow indicates the company may need external financing for growth.[/red]")
+
+def display_executives(management_team: ManagementTeam, detailed: bool = False):
+    """
+    Display company executives in the terminal.
+    
+    Args:
+        management_team: The ManagementTeam object to display
+        detailed: If True, show more detailed information including biographies
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.text import Text
+    from rich.layout import Layout
+    from rich import box
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", management_team.symbol.upper())
+    header.add_row("Company:", management_team.name or "N/A")
+    header.add_row("Executives:", str(len(management_team.executives)))
+    
+    console.print(Panel(header, title="Company Executives", expand=False))
+    
+    # Create table for executives
+    table = Table(show_header=True, header_style="bold")
+    
+    table.add_column("Name", style="bold")
+    table.add_column("Title", style="italic")
+    
+    if detailed:
+        table.add_column("Age", justify="center")
+        table.add_column("Compensation", justify="right")
+        table.add_column("Start Date", justify="center")
+    
+    # Add C-suite executives first (categorized by leadership role)
+    
+    # CEO/Leadership section
+    if management_team.leadership:
+        table.add_row("LEADERSHIP", "", *["" for _ in range(3 if detailed else 0)], style="bold yellow")
+        
+        for exec in management_team.leadership:
+            if detailed:
+                table.add_row(
+                    exec.name,
+                    exec.get_formatted_title(),
+                    str(exec.age) if exec.age else "N/A",
+                    exec.get_formatted_pay(),
+                    exec.start_date if exec.start_date else "N/A"
+                )
+            else:
+                table.add_row(exec.name, exec.get_formatted_title())
+    
+    # Finance section
+    if management_team.finance:
+        table.add_row("FINANCE", "", *["" for _ in range(3 if detailed else 0)], style="bold green")
+        
+        for exec in management_team.finance:
+            if detailed:
+                table.add_row(
+                    exec.name,
+                    exec.get_formatted_title(),
+                    str(exec.age) if exec.age else "N/A",
+                    exec.get_formatted_pay(),
+                    exec.start_date if exec.start_date else "N/A"
+                )
+            else:
+                table.add_row(exec.name, exec.get_formatted_title())
+    
+    # Operations section
+    if management_team.operations:
+        table.add_row("OPERATIONS", "", *["" for _ in range(3 if detailed else 0)], style="bold blue")
+        
+        for exec in management_team.operations:
+            if detailed:
+                table.add_row(
+                    exec.name,
+                    exec.get_formatted_title(),
+                    str(exec.age) if exec.age else "N/A",
+                    exec.get_formatted_pay(),
+                    exec.start_date if exec.start_date else "N/A"
+                )
+            else:
+                table.add_row(exec.name, exec.get_formatted_title())
+    
+    # Technology section
+    if management_team.technology:
+        table.add_row("TECHNOLOGY", "", *["" for _ in range(3 if detailed else 0)], style="bold magenta")
+        
+        for exec in management_team.technology:
+            if detailed:
+                table.add_row(
+                    exec.name,
+                    exec.get_formatted_title(),
+                    str(exec.age) if exec.age else "N/A",
+                    exec.get_formatted_pay(),
+                    exec.start_date if exec.start_date else "N/A"
+                )
+            else:
+                table.add_row(exec.name, exec.get_formatted_title())
+    
+    # Other executives
+    if management_team.other:
+        table.add_row("OTHER EXECUTIVES", "", *["" for _ in range(3 if detailed else 0)], style="bold")
+        
+        for exec in management_team.other:
+            if detailed:
+                table.add_row(
+                    exec.name,
+                    exec.get_formatted_title(),
+                    str(exec.age) if exec.age else "N/A",
+                    exec.get_formatted_pay(),
+                    exec.start_date if exec.start_date else "N/A"
+                )
+            else:
+                table.add_row(exec.name, exec.get_formatted_title())
+    
+    console.print(table)
+    
+    # If detailed view, show biographies for key executives
+    if detailed:
+        console.print("\n[bold]Executive Biographies:[/bold]\n")
+        
+        # Show biographies of key executives (CEO, CFO, etc.)
+        key_executives = []
+        
+        # Add CEO if available
+        ceo = management_team.get_ceo()
+        if ceo and ceo.biography:
+            key_executives.append(ceo)
+            
+        # Add CFO if available
+        cfo = management_team.get_cfo()
+        if cfo and cfo.biography and cfo != ceo:  # Avoid duplication
+            key_executives.append(cfo)
+            
+        # Add COO if available
+        coo = management_team.get_coo()
+        if coo and coo.biography and coo != ceo and coo != cfo:  # Avoid duplication
+            key_executives.append(coo)
+            
+        # If no key executives with bios found, show biographies for anyone who has one
+        if not key_executives:
+            key_executives = [exec for exec in management_team.executives if exec.biography]
+            
+        # Limit to first 3 executives to avoid overwhelming output
+        for exec in key_executives[:3]:
+            panel_title = f"{exec.name} - {exec.title}"
+            console.print(Panel(exec.biography, title=panel_title, expand=False))
+
+
+def display_executive_profile(executive: Executive, company_name: Optional[str] = None):
+    """
+    Display detailed profile for a single executive.
+    
+    Args:
+        executive: The Executive object to display
+        company_name: Optional company name for context
+    """
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich import box
+    
+    console = Console()
+    
+    # Create information table
+    info_table = Table.grid(padding=1, pad_edge=True)
+    info_table.add_column(style="bold", width=15)
+    info_table.add_column()
+    
+    info_table.add_row("Name:", executive.name)
+    info_table.add_row("Title:", executive.get_formatted_title())
+    
+    if company_name:
+        info_table.add_row("Company:", company_name)
+        
+    if executive.age is not None:
+        info_table.add_row("Age:", str(executive.age))
+        
+    if executive.pay is not None:
+        formatted_pay = executive.get_formatted_pay()
+        year_str = f" ({executive.year})" if executive.year else ""
+        info_table.add_row("Compensation:", f"{formatted_pay}{year_str}")
+        
+    if executive.gender:
+        info_table.add_row("Gender:", executive.gender)
+        
+    if executive.start_date:
+        info_table.add_row("Start Date:", executive.start_date)
+    
+    # Display the information panel
+    panel_title = f"Executive Profile: {executive.name}"
+    console.print(Panel(info_table, title=panel_title, expand=False))
+    
+    # If executive has a biography, show it in a separate panel
+    if executive.biography:
+        console.print(Panel(executive.biography, title="Biography", expand=False))
+    else:
+        console.print("[italic]No biography available for this executive.[/italic]")
+
+
+def display_compensation_analysis(management_team: ManagementTeam):
+    """
+    Display analysis of executive compensation.
+    
+    Args:
+        management_team: The ManagementTeam object to analyze
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.progress import Progress, BarColumn, TextColumn
+    from rich import box
+    
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", management_team.symbol.upper())
+    header.add_row("Company:", management_team.name or "N/A")
+    
+    console.print(Panel(header, title="Executive Compensation Analysis", expand=False))
+    
+    # Filter executives with compensation data
+    execs_with_pay = [exec for exec in management_team.executives if exec.pay is not None]
+    
+    if not execs_with_pay:
+        console.print("[italic]No compensation data available for executives.[/italic]")
+        return
+    
+    # Sort executives by compensation (highest to lowest)
+    sorted_execs = sorted(execs_with_pay, key=lambda e: e.pay, reverse=True)
+    
+    # Create compensation table
+    table = Table(show_header=True, header_style="bold")
+    
+    table.add_column("Name", style="bold")
+    table.add_column("Title", style="italic")
+    table.add_column("Compensation", justify="right")
+    table.add_column("Distribution", width=30)
+    
+    # Get highest compensation for scaling the bars
+    max_comp = sorted_execs[0].pay if sorted_execs else 0
+    
+    for exec in sorted_execs:
+        # Calculate bar length relative to maximum compensation
+        if max_comp > 0:
+            bar_length = int(30 * (exec.pay / max_comp))
+            bar = "█" * bar_length
+        else:
+            bar = ""
+            
+        table.add_row(
+            exec.name,
+            exec.get_formatted_title(max_length=30),
+            exec.get_formatted_pay(),
+            bar
+        )
+    
+    console.print(table)
+    
+    # Show statistics if there are enough executives with pay data
+    if len(execs_with_pay) >= 3:
+        # Calculate statistics (all in same currency)
+        total_comp = sum(exec.pay for exec in execs_with_pay)
+        avg_comp = total_comp / len(execs_with_pay)
+        median_comp = sorted([exec.pay for exec in execs_with_pay])[len(execs_with_pay)//2]
+        
+        currency = execs_with_pay[0].currency or ""
+        
+        # Show stats
+        console.print("\n[bold]Compensation Statistics:[/bold]")
+        console.print(f"Total executive compensation: {total_comp/1000000:.2f}M {currency}")
+        console.print(f"Average compensation: {avg_comp/1000000:.2f}M {currency}")
+        console.print(f"Median compensation: {median_comp/1000000:.2f}M {currency}")
+        
+        # Show comparison between CEO and average (if CEO exists)
+        ceo = management_team.get_ceo()
+        if ceo and ceo.pay is not None:
+            ceo_ratio = ceo.pay / avg_comp if avg_comp > 0 else 0
+            console.print(f"CEO to average compensation ratio: {ceo_ratio:.1f}x")
+
+def display_market_cap_history(market_cap_history: MarketCapHistory, detailed: bool = False):
+    """
+    Display market capitalization history in the terminal.
+    
+    Args:
+        market_cap_history: The MarketCapHistory object to display
+        detailed: If True, show more detailed data points
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", market_cap_history.symbol.upper())
+    header.add_row("Interval:", market_cap_history.interval)
+    header.add_row("Currency:", market_cap_history.currency)
+    header.add_row("Period:", f"{market_cap_history.points[0].timestamp} to {market_cap_history.points[-1].timestamp}")
+    
+    if market_cap_history.summary:
+        header.add_row("Current Market Cap:", market_cap_history.summary.end_cap_formatted)
+        
+        change_color = "green" if market_cap_history.summary.change_percent >= 0 else "red"
+        change_sign = "+" if market_cap_history.summary.change_percent >= 0 else ""
+        change_text = f"{change_sign}{market_cap_history.summary.change_percent_formatted} ({market_cap_history.summary.change_value_formatted})"
+        header.add_row("Change:", f"[{change_color}]{change_text}[/{change_color}]")
+        
+    console.print(Panel(header, title="Market Capitalization History", expand=False))
+    
+    # Show summary statistics
+    if market_cap_history.summary:
+        summary_table = Table(show_header=True, header_style="bold")
+        summary_table.add_column("Statistic")
+        summary_table.add_column("Value", justify="right")
+        
+        summary_table.add_row("Minimum", market_cap_history.summary.min_cap_formatted)
+        summary_table.add_row("Maximum", market_cap_history.summary.max_cap_formatted)
+        summary_table.add_row("Average", market_cap_history.summary.avg_cap_formatted)
+        summary_table.add_row("Starting", market_cap_history.summary.start_cap_formatted)
+        summary_table.add_row("Current", market_cap_history.summary.end_cap_formatted)
+        
+        console.print(summary_table)
+    
+    # If detailed, show data points
+    if detailed:
+        # Create table for market cap points
+        points_table = Table(show_header=True, header_style="bold")
+        
+        points_table.add_column("Date/Time")
+        points_table.add_column("Market Cap", justify="right")
+        points_table.add_column("Shares Outstanding", justify="right")
+        
+        # Limited to top 20 data points by default to avoid overwhelming output
+        display_points = market_cap_history.points
+        
+        if len(display_points) > 20 and not detailed:
+            # Take first three, last three, and points in between at even intervals
+            num_middle_points = 14
+            first_points = display_points[:3]
+            last_points = display_points[-3:]
+            
+            if len(display_points) > 6:
+                middle_indexes = [int(i * (len(display_points) - 6) / (num_middle_points - 1) + 3) 
+                                for i in range(num_middle_points)]
+                middle_points = [display_points[i] for i in middle_indexes]
+                display_points = first_points + middle_points + last_points
+            else:
+                display_points = first_points + last_points
+                
+        for point in display_points:
+            # Format date
+            if point.datetime:
+                date_str = point.datetime.strftime("%Y-%m-%d %H:%M")
+            else:
+                date_str = point.timestamp
+                
+            # Format shares outstanding with commas
+            shares_str = f"{point.shares_outstanding:,.0f}"
+            
+            points_table.add_row(date_str, point.market_cap_formatted, shares_str)
+            
+        console.print("\n[bold]Historical Data Points:[/bold]")
+        console.print(points_table)
+
+
+def display_market_cap_chart(market_cap_history: MarketCapHistory):
+    """
+    Display a chart of market capitalization over time.
+    
+    Args:
+        market_cap_history: The MarketCapHistory object to chart
+    """
+    from rich.console import Console
+    from rich.panel import Panel
+
+    console = Console()
+    
+    # Create header with basic information
+    header = f"Market Cap Chart for {market_cap_history.symbol.upper()} ({market_cap_history.interval})"
+    
+    # Get market cap values for the chart
+    if not market_cap_history.points:
+        console.print("[bold red]No market cap data points available to chart[/bold red]")
+        return
+    
+    # Get points for charting
+    points = market_cap_history.points
+    values = [p.market_cap for p in points]
+    
+    # Calculate chart dimensions
+    chart_width = min(console.width - 10, 100)  # Adjust based on terminal width
+    chart_height = 15
+    
+    # Create a simple ASCII chart
+    chart = _create_ascii_chart(values, width=chart_width, height=chart_height)
+    
+    # Get some dates for the x-axis
+    num_labels = min(5, len(points))
+    if num_labels > 0:
+        label_indices = [int(i * (len(points) - 1) / (num_labels - 1)) for i in range(num_labels)]
+        labels = [points[i].date.strftime("%Y-%m-%d") if points[i].date else "N/A" for i in label_indices]
+        
+        # Add date labels
+        label_positions = [int(i * (chart_width - 1) / (num_labels - 1)) for i in range(num_labels)]
+        date_label_line = " " * 10
+        for pos, label in zip(label_positions, labels):
+            label_start = max(0, pos - len(label) // 2)
+            date_label_line = date_label_line[:label_start] + label + date_label_line[label_start + len(label):]
+    else:
+        date_label_line = ""
+    
+    # Add market cap labels on y-axis
+    min_val = min(values) if values else 0
+    max_val = max(values) if values else 0
+    
+    if min_val == max_val:
+        min_val = 0.9 * min_val if min_val > 0 else 0
+        max_val = 1.1 * max_val if max_val > 0 else 1
+    
+    # Add y-axis labels (market cap values)
+    y_labels = []
+    for i in range(chart_height + 1):
+        val = max_val - (i / chart_height) * (max_val - min_val)
+        y_labels.append(MarketCapPoint._format_market_cap(val))
+    
+    # Combine chart with labels
+    chart_with_labels = []
+    for i, line in enumerate(chart.split('\n')):
+        if i < len(y_labels):
+            label = y_labels[i].rjust(10)
+            chart_with_labels.append(f"{label} {line}")
+        else:
+            chart_with_labels.append(f"{' ' * 10} {line}")
+    
+    # Add date labels at the bottom
+    chart_with_labels.append(date_label_line)
+    
+    # Display the chart
+    console.print(Panel("\n".join(chart_with_labels), title=header, expand=False))
+    
+    # Add summary statistics below the chart
+    if market_cap_history.summary:
+        change_color = "green" if market_cap_history.summary.change_percent >= 0 else "red"
+        change_sign = "+" if market_cap_history.summary.change_percent >= 0 else ""
+        change_text = f"{change_sign}{market_cap_history.summary.change_percent_formatted} ({market_cap_history.summary.change_value_formatted})"
+        
+        console.print(f"Current: {market_cap_history.summary.end_cap_formatted} | " 
+                    f"Change: [{change_color}]{change_text}[/{change_color}] | "
+                    f"Range: {market_cap_history.summary.min_cap_formatted} - {market_cap_history.summary.max_cap_formatted}")
+
+
+def _create_ascii_chart(values, width=80, height=15):
+    """
+    Create a simple ASCII chart for the given values.
+    
+    Args:
+        values: List of numerical values to chart
+        width: Width of the chart in characters
+        height: Height of the chart in characters
+        
+    Returns:
+        String containing the ASCII chart
+    """
+    if not values:
+        return "No data to display"
+        
+    min_val = min(values)
+    max_val = max(values)
+    
+    # If min and max are the same, adjust to avoid division by zero
+    if min_val == max_val:
+        min_val = 0.9 * min_val if min_val > 0 else 0
+        max_val = 1.1 * max_val if max_val > 0 else 1
+    
+    # Create empty chart
+    chart = [[" " for _ in range(width)] for _ in range(height)]
+    
+    # Only draw chart if we have data
+    if values and max_val > min_val:
+        # Normalize and scale values to chart dimensions
+        normalized = [(val - min_val) / (max_val - min_val) for val in values]
+        
+        # Map values to x, y coordinates
+        data_points = []
+        for i, norm_val in enumerate(normalized):
+            x = int((i / (len(values) - 1) if len(values) > 1 else 0.5) * (width - 1))
+            y = height - 1 - int(norm_val * (height - 1))
+            data_points.append((x, y))
+        
+        # Draw chart lines
+        for i in range(len(data_points) - 1):
+            x1, y1 = data_points[i]
+            x2, y2 = data_points[i + 1]
+            
+            # Draw line between points (simple Bresenham-like algorithm)
+            if x1 == x2:
+                # Vertical line
+                for y in range(min(y1, y2), max(y1, y2) + 1):
+                    chart[y][x1] = "│"
+            else:
+                # Handle diagonal lines
+                dx = x2 - x1
+                dy = y2 - y1
+                steps = max(abs(dx), abs(dy))
+                x_increment = dx / steps
+                y_increment = dy / steps
+                
+                x, y = x1, y1
+                for _ in range(steps):
+                    chart_y = int(y)
+                    chart_x = int(x)
+                    if 0 <= chart_y < height and 0 <= chart_x < width:
+                        if abs(y_increment) > abs(x_increment):
+                            chart[chart_y][chart_x] = "│"
+                        else:
+                            chart[chart_y][chart_x] = "─"
+                    x += x_increment
+                    y += y_increment
+        
+        # Mark data points
+        for x, y in data_points:
+            if 0 <= y < height and 0 <= x < width:
+                chart[y][x] = "●"
+    
+    # Convert 2D chart array to string
+    return "\n".join("".join(row) for row in chart)
+
+
+def display_market_cap_comparison(symbol: str, daily_history: MarketCapHistory, monthly_history: MarketCapHistory):
+    """
+    Display a comparison of short-term and long-term market cap trends.
+    
+    Args:
+        symbol: The stock symbol
+        daily_history: The MarketCapHistory with daily interval
+        monthly_history: The MarketCapHistory with monthly interval
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.columns import Columns
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", symbol.upper())
+    header.add_row("Current Market Cap:", 
+                  daily_history.summary.end_cap_formatted if daily_history.summary else "N/A")
+    
+    console.print(Panel(header, title="Market Capitalization Comparison", expand=False))
+    
+    # Create comparison table
+    comp_table = Table(show_header=True, header_style="bold", title="Market Cap Trends")
+    
+    comp_table.add_column("Period")
+    comp_table.add_column("Start", justify="right")
+    comp_table.add_column("End", justify="right")
+    comp_table.add_column("Change", justify="right")
+    comp_table.add_column("% Change", justify="right")
+    comp_table.add_column("Min", justify="right")
+    comp_table.add_column("Max", justify="right")
+    
+    # Add row for daily data
+    if daily_history.summary:
+        change_text = daily_history.summary.change_value_formatted
+        percent_text = daily_history.summary.change_percent_formatted
+        style = "green" if daily_history.summary.change_percent >= 0 else "red"
+        
+        comp_table.add_row(
+            f"Short-term ({daily_history.interval})",
+            daily_history.summary.start_cap_formatted,
+            daily_history.summary.end_cap_formatted,
+            change_text,
+            percent_text,
+            daily_history.summary.min_cap_formatted,
+            daily_history.summary.max_cap_formatted,
+            style=style
+        )
+    
+    # Add row for monthly data
+    if monthly_history.summary:
+        change_text = monthly_history.summary.change_value_formatted
+        percent_text = monthly_history.summary.change_percent_formatted
+        style = "green" if monthly_history.summary.change_percent >= 0 else "red"
+        
+        comp_table.add_row(
+            f"Long-term ({monthly_history.interval})",
+            monthly_history.summary.start_cap_formatted,
+            monthly_history.summary.end_cap_formatted,
+            change_text,
+            percent_text,
+            monthly_history.summary.min_cap_formatted,
+            monthly_history.summary.max_cap_formatted,
+            style=style
+        )
+    
+    console.print(comp_table)
+    
+    # Get points for mini-charts
+    daily_values = [p.market_cap for p in daily_history.points]
+    monthly_values = [p.market_cap for p in monthly_history.points]
+    
+    # Create mini-charts
+    chart_width = min(console.width // 2 - 5, 50)
+    chart_height = 8
+    
+    daily_chart = _create_ascii_chart(daily_values, width=chart_width, height=chart_height)
+    monthly_chart = _create_ascii_chart(monthly_values, width=chart_width, height=chart_height)
+    
+    # Display charts side by side
+    console.print("\n[bold]Market Cap Trends:[/bold]")
+    console.print(
+        Columns([
+            Panel(daily_chart, title=f"Short-term ({daily_history.interval})"),
+            Panel(monthly_chart, title=f"Long-term ({monthly_history.interval})")
+        ])
+    )
+    
+    # Show additional insights
+    console.print("\n[bold]Market Cap Insights:[/bold]")
+    
+    if daily_history.summary and monthly_history.summary:
+        # Determine trend directions
+        short_term_trend = "up" if daily_history.summary.change_percent >= 0 else "down"
+        long_term_trend = "up" if monthly_history.summary.change_percent >= 0 else "down"
+        
+        # Volatility (difference between min and max relative to average)
+        daily_volatility = ((daily_history.summary.max_cap - daily_history.summary.min_cap) / 
+                           daily_history.summary.avg_cap * 100) if daily_history.summary.avg_cap > 0 else 0
+                           
+        monthly_volatility = ((monthly_history.summary.max_cap - monthly_history.summary.min_cap) / 
+                             monthly_history.summary.avg_cap * 100) if monthly_history.summary.avg_cap > 0 else 0
+        
+        # Recent performance versus long-term trend
+        if short_term_trend == long_term_trend:
+            trend_consistency = f"[bold green]Consistent {short_term_trend.upper()} trend[/bold green] in both short and long term"
+        else:
+            if short_term_trend == "up" and long_term_trend == "down":
+                trend_consistency = "[bold yellow]Recent REVERSAL: Short-term uptrend in a long-term downtrend[/bold yellow]"
+            else:
+                trend_consistency = "[bold red]Recent PULLBACK: Short-term downtrend in a long-term uptrend[/bold red]"
+                
+        # Output insights
+        console.print(f"• {trend_consistency}")
+        console.print(f"• Short-term volatility: {daily_volatility:.2f}%")
+        console.print(f"• Long-term volatility: {monthly_volatility:.2f}%")
+        
+        # Market cap classification
+        current_cap = daily_history.summary.end_cap
+        if current_cap >= 200_000_000_000:  # $200B+
+            cap_class = "Mega Cap"
+        elif current_cap >= 10_000_000_000:  # $10B+
+            cap_class = "Large Cap"
+        elif current_cap >= 2_000_000_000:  # $2B+
+            cap_class = "Mid Cap"
+        elif current_cap >= 300_000_000:  # $300M+
+            cap_class = "Small Cap"
+        elif current_cap >= 50_000_000:  # $50M+
+            cap_class = "Micro Cap"
+        else:
+            cap_class = "Nano Cap"
+        
+        console.print(f"• Market Classification: [bold]{cap_class}[/bold] ({daily_history.summary.end_cap_formatted})")
+
+def display_analyst_estimates(estimates: AnalystEstimates, focus: str = 'eps'):
+    """
+    Display analyst estimates in the terminal.
+    
+    Args:
+        estimates: The AnalystEstimates object to display
+        focus: Focus area - 'eps', 'revenue', 'recommendations', or 'all'
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.columns import Columns
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", estimates.symbol.upper())
+    if estimates.name:
+        header.add_row("Company:", estimates.name)
+    header.add_row("Currency:", estimates.currency)
+    if estimates.last_updated:
+        header.add_row("Last Updated:", estimates.last_updated)
+    
+    console.print(Panel(header, title="Analyst Estimates", expand=False))
+    
+    # Determine which sections to display
+    show_eps = focus in ['eps', 'all']
+    show_revenue = focus in ['revenue', 'all']
+    show_recommendations = focus in ['recommendations', 'all']
+    show_price_target = focus in ['price', 'all']
+    
+    # Display EPS estimates
+    if show_eps and (estimates.quarterly_eps_estimates or estimates.annual_eps_estimates):
+        console.print("\n[bold]EPS Estimates[/bold]")
+        
+        # Quarterly EPS table
+        if estimates.quarterly_eps_estimates:
+            quarterly_table = Table(show_header=True, header_style="bold", title="Quarterly EPS")
+            quarterly_table.add_column("Period")
+            quarterly_table.add_column("Estimated EPS", justify="right")
+            quarterly_table.add_column("Analyst Count", justify="right")
+            quarterly_table.add_column("Actual", justify="right")
+            quarterly_table.add_column("Surprise", justify="right")
+            
+            for estimate in estimates.quarterly_eps_estimates:
+                # Format the actual and surprise values
+                actual_str = f"{estimate.actual_value:.2f}" if estimate.actual_value is not None else "Not reported"
+                
+                if estimate.surprise_value is not None:
+                    surprise_style = "green" if estimate.surprise_value >= 0 else "red"
+                    surprise_str = f"{estimate.surprise_value:.2f} ({estimate.surprise_percent:.1f}%)"
+                else:
+                    surprise_style = None
+                    surprise_str = "N/A"
+                
+                # Add row
+                quarterly_table.add_row(
+                    estimate.period_str,
+                    f"{estimate.estimate_value:.2f}",
+                    str(estimate.estimate_count),
+                    actual_str,
+                    surprise_str,
+                    style=None if estimate.actual_value is None else ("green" if estimate.actual_value >= estimate.estimate_value else "red")
+                )
+                
+            console.print(quarterly_table)
+        
+        # Annual EPS table
+        if estimates.annual_eps_estimates:
+            annual_table = Table(show_header=True, header_style="bold", title="Annual EPS")
+            annual_table.add_column("Period")
+            annual_table.add_column("Estimated EPS", justify="right")
+            annual_table.add_column("Analyst Count", justify="right")
+            annual_table.add_column("Actual", justify="right")
+            annual_table.add_column("Surprise", justify="right")
+            
+            for estimate in estimates.annual_eps_estimates:
+                # Format the actual and surprise values
+                actual_str = f"{estimate.actual_value:.2f}" if estimate.actual_value is not None else "Not reported"
+                
+                if estimate.surprise_value is not None:
+                    surprise_style = "green" if estimate.surprise_value >= 0 else "red"
+                    surprise_str = f"{estimate.surprise_value:.2f} ({estimate.surprise_percent:.1f}%)"
+                else:
+                    surprise_style = None
+                    surprise_str = "N/A"
+                
+                # Add row
+                annual_table.add_row(
+                    estimate.period_str,
+                    f"{estimate.estimate_value:.2f}",
+                    str(estimate.estimate_count),
+                    actual_str,
+                    surprise_str,
+                    style=None if estimate.actual_value is None else ("green" if estimate.actual_value >= estimate.estimate_value else "red")
+                )
+                
+            console.print(annual_table)
+    
+    # Display Revenue estimates
+    if show_revenue and (estimates.quarterly_revenue_estimates or estimates.annual_revenue_estimates):
+        console.print("\n[bold]Revenue Estimates[/bold]")
+        
+        # Quarterly Revenue table
+        if estimates.quarterly_revenue_estimates:
+            quarterly_table = Table(show_header=True, header_style="bold", title="Quarterly Revenue (in millions)")
+            quarterly_table.add_column("Period")
+            quarterly_table.add_column("Estimated Revenue", justify="right")
+            quarterly_table.add_column("Analyst Count", justify="right")
+            quarterly_table.add_column("Actual", justify="right")
+            quarterly_table.add_column("Surprise", justify="right")
+            
+            for estimate in estimates.quarterly_revenue_estimates:
+                # Format the values
+                estimated_str = f"${estimate.estimate_value:,.2f}M"
+                actual_str = f"${estimate.actual_value:,.2f}M" if estimate.actual_value is not None else "Not reported"
+                
+                if estimate.surprise_value is not None:
+                    surprise_style = "green" if estimate.surprise_value >= 0 else "red"
+                    surprise_str = f"${estimate.surprise_value:,.2f}M ({estimate.surprise_percent:.1f}%)"
+                else:
+                    surprise_style = None
+                    surprise_str = "N/A"
+                
+                # Add row
+                quarterly_table.add_row(
+                    estimate.period_str,
+                    estimated_str,
+                    str(estimate.estimate_count),
+                    actual_str,
+                    surprise_str,
+                    style=None if estimate.actual_value is None else ("green" if estimate.actual_value >= estimate.estimate_value else "red")
+                )
+                
+            console.print(quarterly_table)
+        
+        # Annual Revenue table
+        if estimates.annual_revenue_estimates:
+            annual_table = Table(show_header=True, header_style="bold", title="Annual Revenue (in millions)")
+            annual_table.add_column("Period")
+            annual_table.add_column("Estimated Revenue", justify="right")
+            annual_table.add_column("Analyst Count", justify="right")
+            annual_table.add_column("Actual", justify="right")
+            annual_table.add_column("Surprise", justify="right")
+            
+            for estimate in estimates.annual_revenue_estimates:
+                # Format the values
+                estimated_str = f"${estimate.estimate_value:,.2f}M"
+                actual_str = f"${estimate.actual_value:,.2f}M" if estimate.actual_value is not None else "Not reported"
+                
+                if estimate.surprise_value is not None:
+                    surprise_style = "green" if estimate.surprise_value >= 0 else "red"
+                    surprise_str = f"${estimate.surprise_value:,.2f}M ({estimate.surprise_percent:.1f}%)"
+                else:
+                    surprise_style = None
+                    surprise_str = "N/A"
+                
+                # Add row
+                annual_table.add_row(
+                    estimate.period_str,
+                    estimated_str,
+                    str(estimate.estimate_count),
+                    actual_str,
+                    surprise_str,
+                    style=None if estimate.actual_value is None else ("green" if estimate.actual_value >= estimate.estimate_value else "red")
+                )
+                
+            console.print(annual_table)
+    
+    # Display price target if available
+    if show_price_target and estimates.price_target:
+        console.print("\n[bold]Price Target[/bold]")
+        
+        price_table = Table(show_header=True, header_style="bold")
+        price_table.add_column("Target Type")
+        price_table.add_column("Mean Target", justify="right")
+        price_table.add_column("Median Target", justify="right")
+        price_table.add_column("High Target", justify="right")
+        price_table.add_column("Low Target", justify="right")
+        price_table.add_column("Analyst Count", justify="right")
+        
+        # Format the values
+        mean_str = f"${estimates.price_target.mean_target:.2f}"
+        median_str = f"${estimates.price_target.median_target:.2f}" if estimates.price_target.median_target is not None else "N/A"
+        high_str = f"${estimates.price_target.high_target:.2f}" if estimates.price_target.high_target is not None else "N/A"
+        low_str = f"${estimates.price_target.low_target:.2f}" if estimates.price_target.low_target is not None else "N/A"
+        
+        # Add row
+        price_table.add_row(
+            "Price Target",
+            mean_str,
+            median_str,
+            high_str,
+            low_str,
+            str(estimates.price_target.analyst_count)
+        )
+        
+        console.print(price_table)
+    
+    # Display recommendation trends
+    if show_recommendations and estimates.recommendation_trends:
+        console.print("\n[bold]Analyst Recommendations[/bold]")
+        
+        rec_table = Table(show_header=True, header_style="bold")
+        rec_table.add_column("Period")
+        rec_table.add_column("Strong Buy", justify="right")
+        rec_table.add_column("Buy", justify="right")
+        rec_table.add_column("Hold", justify="right")
+        rec_table.add_column("Sell", justify="right")
+        rec_table.add_column("Strong Sell", justify="right")
+        rec_table.add_column("Score", justify="right")
+        rec_table.add_column("Recommendation")
+        
+        for trend in estimates.recommendation_trends:
+            # Get recommendation string and style
+            rec_str = trend._get_recommendation_str()
+            
+            if rec_str == "Strong Buy":
+                style = "green"
+            elif rec_str == "Buy":
+                style = "green"
+            elif rec_str == "Hold":
+                style = "yellow"
+            elif rec_str == "Sell":
+                style = "red"
+            elif rec_str == "Strong Sell":
+                style = "red"
+            else:
+                style = None
+            
+            # Add row
+            rec_table.add_row(
+                trend.period,
+                str(trend.strong_buy),
+                str(trend.buy),
+                str(trend.hold),
+                str(trend.sell),
+                str(trend.strong_sell),
+                f"{trend.score:.2f}",
+                rec_str,
+                style=style
+            )
+            
+        console.print(rec_table)
+        
+        # Display a recommendation breakdown visualization if there are recommendations
+        if estimates.recommendation_trends and estimates.recommendation_trends[0].total_analysts > 0:
+            console.print("\n[bold]Current Recommendation Breakdown[/bold]")
+            
+            current_rec = estimates.recommendation_trends[0]
+            
+            # Create a visual breakdown
+            breakdown_table = Table(show_header=False, box=None)
+            breakdown_table.add_column("Type", style="bold")
+            breakdown_table.add_column("Count")
+            breakdown_table.add_column("Percentage", justify="right")
+            breakdown_table.add_column("Visualization")
+            
+            # Add rows for each recommendation type
+            types = [
+                ("Strong Buy", current_rec.strong_buy, "green"),
+                ("Buy", current_rec.buy, "green"),
+                ("Hold", current_rec.hold, "yellow"),
+                ("Sell", current_rec.sell, "red"),
+                ("Strong Sell", current_rec.strong_sell, "red")
+            ]
+            
+            for rec_type, count, color in types:
+                if current_rec.total_analysts > 0:
+                    percentage = (count / current_rec.total_analysts) * 100
+                    bar_width = int(30 * percentage / 100) if percentage > 0 else 0
+                    bar = f"[{color}]" + "█" * bar_width + f"[/{color}]"
+                else:
+                    percentage = 0
+                    bar = ""
+                
+                breakdown_table.add_row(
+                    rec_type,
+                    str(count),
+                    f"{percentage:.1f}%",
+                    bar
+                )
+                
+            console.print(breakdown_table)
+
+
+def display_eps_comparison(symbols: List[str], estimates_list: List[AnalystEstimates], period_type: str = 'quarterly'):
+    """
+    Display a comparison of EPS estimates for multiple symbols.
+    
+    Args:
+        symbols: List of stock symbols
+        estimates_list: List of AnalystEstimates objects
+        period_type: 'quarterly' or 'annual'
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    if not estimates_list:
+        console.print("[bold red]No estimates to compare[/bold red]")
+        return
+    
+    # Create header
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbols:", ", ".join(symbol.upper() for symbol in symbols))
+    header.add_row("Period Type:", period_type.title())
+    
+    title = f"{period_type.title()} EPS Estimates Comparison"
+        
+    console.print(Panel(header, title=title, expand=False))
+    
+    # Determine which estimates to use
+    all_estimates = []
+    for est in estimates_list:
+        if period_type.lower() == 'quarterly':
+            all_estimates.append((est.symbol, est.quarterly_eps_estimates))
+        else:
+            all_estimates.append((est.symbol, est.annual_eps_estimates))
+    
+    # Find all unique periods across all companies
+    all_periods = set()
+    for _, estimates in all_estimates:
+        for est in estimates:
+            all_periods.add(est.period)
+            
+    # Sort periods (most recent first)
+    sorted_periods = sorted(list(all_periods))
+    
+    # Create main comparison table
+    table = Table(show_header=True, header_style="bold")
+    
+    # Add columns - first for periods, then one for each symbol
+    table.add_column("Period", style="dim")
+    
+    for symbol in symbols:
+        table.add_column(symbol.upper(), justify="right")
+    
+    # Add rows for each period
+    for period in sorted_periods:
+        row_values = [period]
+        
+        for symbol, estimates in all_estimates:
+            # Find the estimate for this period
+            estimate = next((est for est in estimates if est.period == period), None)
+            
+            if estimate:
+                est_str = f"{estimate.estimate_value:.2f}"
+                if estimate.actual_value is not None:
+                    est_str += f" (Actual: {estimate.actual_value:.2f})"
+                row_values.append(est_str)
+            else:
+                row_values.append("N/A")
+        
+        table.add_row(*row_values)
+    
+    console.print(table)
+    
+    # Add EPS growth estimates if we have annual estimates
+    if period_type.lower() == 'annual' and len(sorted_periods) >= 2:
+        console.print("\n[bold]Estimated Annual EPS Growth:[/bold]")
+        
+        growth_table = Table(show_header=True, header_style="bold")
+        growth_table.add_column("Symbol")
+        growth_table.add_column("Year-over-Year Growth", justify="right")
+        
+        for symbol, estimates in all_estimates:
+            if len(estimates) >= 2:
+                # Sort by period to ensure correct order
+                sorted_ests = sorted(estimates, key=lambda e: e.period)
+                
+                if len(sorted_ests) >= 2:
+                    # Calculate YoY growth from current to next year's estimate
+                    current_est = sorted_ests[0].estimate_value
+                    next_est = sorted_ests[1].estimate_value
+                    
+                    if current_est > 0:
+                        growth = ((next_est - current_est) / current_est) * 100
+                        growth_str = f"{growth:.2f}%"
+                        style = "green" if growth > 0 else "red"
+                    else:
+                        # Handle division by zero or negative EPS
+                        if current_est < 0 and next_est > 0:
+                            growth_str = "Positive turnaround"
+                            style = "green"
+                        elif current_est <= 0 and next_est <= 0:
+                            if next_est > current_est:
+                                growth_str = "Improving (negative EPS)"
+                                style = "yellow"
+                            else:
+                                growth_str = "Declining (negative EPS)"
+                                style = "red"
+                        else:
+                            growth_str = "N/A"
+                            style = None
+                            
+                    growth_table.add_row(symbol.upper(), growth_str, style=style)
+                else:
+                    growth_table.add_row(symbol.upper(), "Insufficient data")
+            else:
+                growth_table.add_row(symbol.upper(), "Insufficient data")
+                
+        console.print(growth_table)
+
+
+def display_revenue_estimates(estimates: AnalystEstimates, detailed: bool = False):
+    """
+    Display revenue estimates in the terminal with a focus on quarterly and annual sales forecasts.
+    
+    Args:
+        estimates: The AnalystEstimates object to display
+        detailed: If True, shows additional detail including historical surprises
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.columns import Columns
+
+    console = Console()
+    
+    # Create header with basic information
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", estimates.symbol.upper())
+    if estimates.name:
+        header.add_row("Company:", estimates.name)
+    header.add_row("Currency:", estimates.currency)
+    if estimates.last_updated:
+        header.add_row("Last Updated:", estimates.last_updated)
+    
+    console.print(Panel(header, title="Revenue Estimates", expand=False))
+    
+    # Display summary of available forecasts
+    summary = Table.grid(padding=1)
+    summary.add_column(style="bold")
+    summary.add_column(justify="right")
+    
+    quarterly_count = len(estimates.quarterly_revenue_estimates)
+    annual_count = len(estimates.annual_revenue_estimates)
+    
+    summary.add_row("Quarterly Revenue Forecasts:", str(quarterly_count))
+    summary.add_row("Annual Revenue Forecasts:", str(annual_count))
+    
+    # Calculate total analyst coverage
+    total_analysts = 0
+    if estimates.quarterly_revenue_estimates:
+        total_analysts = max([e.estimate_count for e in estimates.quarterly_revenue_estimates] or [0])
+    elif estimates.annual_revenue_estimates:
+        total_analysts = max([e.estimate_count for e in estimates.annual_revenue_estimates] or [0])
+        
+    summary.add_row("Total Analyst Coverage:", str(total_analysts))
+    
+    console.print(summary)
+    
+    # Display Quarterly Revenue table
+    if estimates.quarterly_revenue_estimates:
+        console.print("\n[bold]Quarterly Revenue Estimates[/bold]")
+        
+        quarterly_table = Table(show_header=True, header_style="bold")
+        quarterly_table.add_column("Period")
+        quarterly_table.add_column("Revenue Estimate", justify="right")
+        quarterly_table.add_column("Analyst Count", justify="right")
+        
+        if detailed:
+            quarterly_table.add_column("Actual", justify="right")
+            quarterly_table.add_column("Surprise", justify="right")
+        
+        # Sort estimates by period end date (most imminent first)
+        sorted_estimates = sorted(
+            estimates.quarterly_revenue_estimates,
+            key=lambda e: e.period_end_date if e.period_end_date else "9999-99-99",
+            reverse=False  # Upcoming quarters first
+        )
+        
+        for estimate in sorted_estimates:
+            # Format the values
+            estimate_str = f"${estimate.estimate_value:,.2f}M" if estimate.estimate_value is not None else "N/A"
+            
+            if detailed:
+                actual_str = f"${estimate.actual_value:,.2f}M" if estimate.actual_value is not None else "Not reported"
+                
+                if estimate.surprise_value is not None and estimate.surprise_percent is not None:
+                    surprise_str = f"${estimate.surprise_value:,.2f}M ({estimate.surprise_percent:.1f}%)"
+                else:
+                    surprise_str = "N/A"
+                
+                # Add row with actual and surprise
+                quarterly_table.add_row(
+                    estimate.period_str,
+                    estimate_str,
+                    str(estimate.estimate_count),
+                    actual_str,
+                    surprise_str,
+                    style=None if estimate.actual_value is None else 
+                          ("green" if estimate.actual_value >= estimate.estimate_value else "red")
+                )
+            else:
+                # Add simplified row
+                is_future = estimate.actual_value is None  # Assume it's a future quarter if no actual value
+                row_style = "blue" if is_future else None
+                
+                quarterly_table.add_row(
+                    estimate.period_str,
+                    estimate_str,
+                    str(estimate.estimate_count),
+                    style=row_style
+                )
+                
+        console.print(quarterly_table)
+    
+    # Display Annual Revenue table
+    if estimates.annual_revenue_estimates:
+        console.print("\n[bold]Annual Revenue Estimates[/bold]")
+        
+        annual_table = Table(show_header=True, header_style="bold")
+        annual_table.add_column("Fiscal Year")
+        annual_table.add_column("Revenue Estimate", justify="right")
+        annual_table.add_column("Analyst Count", justify="right")
+        
+        if detailed:
+            annual_table.add_column("Actual", justify="right")
+            annual_table.add_column("Surprise", justify="right")
+        
+        # Sort estimates by period end date (most imminent first)
+        sorted_estimates = sorted(
+            estimates.annual_revenue_estimates,
+            key=lambda e: e.period_end_date if e.period_end_date else "9999-99-99",
+            reverse=False  # Upcoming years first
+        )
+        
+        for estimate in sorted_estimates:
+            # Format the values
+            estimate_str = f"${estimate.estimate_value:,.2f}M" if estimate.estimate_value is not None else "N/A"
+            
+            if detailed:
+                actual_str = f"${estimate.actual_value:,.2f}M" if estimate.actual_value is not None else "Not reported"
+                
+                if estimate.surprise_value is not None and estimate.surprise_percent is not None:
+                    surprise_str = f"${estimate.surprise_value:,.2f}M ({estimate.surprise_percent:.1f}%)"
+                else:
+                    surprise_str = "N/A"
+                
+                # Add row with actual and surprise
+                annual_table.add_row(
+                    estimate.period_str,
+                    estimate_str,
+                    str(estimate.estimate_count),
+                    actual_str,
+                    surprise_str,
+                    style=None if estimate.actual_value is None else 
+                          ("green" if estimate.actual_value >= estimate.estimate_value else "red")
+                )
+            else:
+                # Add simplified row
+                is_future = estimate.actual_value is None  # Assume it's a future year if no actual value
+                row_style = "blue" if is_future else None
+                
+                annual_table.add_row(
+                    estimate.period_str,
+                    estimate_str,
+                    str(estimate.estimate_count),
+                    style=row_style
+                )
+                
+        console.print(annual_table)
+    
+    # Display revenue growth calculations if we have multiple annual forecasts
+    annual_forecasts = estimates.annual_revenue_estimates
+    if annual_forecasts and len(annual_forecasts) >= 2:
+        console.print("\n[bold]Estimated Annual Revenue Growth[/bold]")
+        
+        # Sort by period to ensure correct order for growth calculation
+        sorted_forecasts = sorted(annual_forecasts, key=lambda e: e.period)
+        
+        growth_table = Table(show_header=True, header_style="bold")
+        growth_table.add_column("Period")
+        growth_table.add_column("Revenue Estimate", justify="right")
+        growth_table.add_column("YoY Growth", justify="right")
+        
+        prev_value = None
+        
+        for forecast in sorted_forecasts:
+            # Format estimate
+            estimate_str = f"${forecast.estimate_value:,.2f}M" if forecast.estimate_value is not None else "N/A"
+            
+            # Calculate growth
+            if prev_value is not None and prev_value > 0 and forecast.estimate_value is not None:
+                growth_pct = ((forecast.estimate_value - prev_value) / prev_value) * 100
+                growth_str = f"{growth_pct:.2f}%"
+                style = "green" if growth_pct > 0 else "red"
+            else:
+                growth_str = "N/A"
+                style = None
+                
+            growth_table.add_row(
+                forecast.period,
+                estimate_str,
+                growth_str,
+                style=style
+            )
+            
+            # Update for next iteration
+            prev_value = forecast.estimate_value
+            
+        console.print(growth_table)
+    
+    # If we have both revenue and EPS forecasts, show a forward P/S and P/E analysis
+    if estimates.annual_revenue_estimates and estimates.annual_eps_estimates and hasattr(estimates, 'raw_data') and 'price' in estimates.raw_data:
+        try:
+            current_price = float(estimates.raw_data.get('price', 0))
+            if current_price > 0:
+                console.print("\n[bold]Forward Valuation Metrics[/bold]")
+                
+                # Get the next full year forecast for both revenue and EPS
+                sorted_rev_forecasts = sorted(estimates.annual_revenue_estimates, key=lambda e: e.period)
+                sorted_eps_forecasts = sorted(estimates.annual_eps_estimates, key=lambda e: e.period)
+                
+                # Find next year's estimates
+                next_year_rev = next((f for f in sorted_rev_forecasts if f.actual_value is None), None)
+                next_year_eps = next((f for f in sorted_eps_forecasts if f.actual_value is None), None)
+                
+                if next_year_rev and next_year_eps:
+                    # Calculate market cap (assuming in millions for consistency with revenue)
+                    market_cap = current_price * (estimates.raw_data.get('shares_outstanding', 0) / 1_000_000)
+                    
+                    # Calculate forward P/S and P/E
+                    forward_ps = market_cap / next_year_rev.estimate_value if next_year_rev.estimate_value else None
+                    forward_pe = current_price / next_year_eps.estimate_value if next_year_eps.estimate_value else None
+                    
+                    valuation_table = Table(show_header=True, header_style="bold")
+                    valuation_table.add_column("Metric")
+                    valuation_table.add_column("Value", justify="right")
+                    valuation_table.add_column("Period", justify="right")
+                    
+                    if forward_ps:
+                        valuation_table.add_row(
+                            "Forward P/S Ratio",
+                            f"{forward_ps:.2f}x",
+                            next_year_rev.period
+                        )
+                    
+                    if forward_pe:
+                        valuation_table.add_row(
+                            "Forward P/E Ratio",
+                            f"{forward_pe:.2f}x",
+                            next_year_eps.period
+                        )
+                    
+                    console.print(valuation_table)
+        except (ValueError, TypeError, ZeroDivisionError, AttributeError):
+            # Skip valuation metrics if there's any calculation error
+            pass
+
+
+def display_revenue_comparison(symbols: List[str], estimates_list: List[AnalystEstimates], period_type: str = 'annual'):
+    """
+    Display a comparison of revenue estimates for multiple symbols.
+    
+    Args:
+        symbols: List of stock symbols
+        estimates_list: List of AnalystEstimates objects
+        period_type: 'quarterly' or 'annual'
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+
+    console = Console()
+    
+    if not estimates_list:
+        console.print("[bold red]No estimates to compare[/bold red]")
+        return
+    
+    # Create header
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbols:", ", ".join(symbol.upper() for symbol in symbols))
+    header.add_row("Period Type:", period_type.title())
+    
+    title = f"{period_type.title()} Revenue Estimates Comparison"
+        
+    console.print(Panel(header, title=title, expand=False))
+    
+    # Determine which estimates to use
+    all_estimates = []
+    for est in estimates_list:
+        if period_type.lower() == 'quarterly':
+            all_estimates.append((est.symbol, est.quarterly_revenue_estimates))
+        else:
+            all_estimates.append((est.symbol, est.annual_revenue_estimates))
+    
+    # Find all unique periods across all companies
+    all_periods = set()
+    for _, estimates in all_estimates:
+        for est in estimates:
+            all_periods.add(est.period)
+            
+    # Sort periods (most recent first)
+    sorted_periods = sorted(list(all_periods))
+    
+    # Create main comparison table
+    table = Table(show_header=True, header_style="bold")
+    
+    # Add columns - first for periods, then one for each symbol
+    table.add_column("Period", style="dim")
+    
+    for symbol in symbols:
+        table.add_column(symbol.upper(), justify="right")
+    
+    # Add rows for each period
+    for period in sorted_periods:
+        row_values = [period]
+        
+        for symbol, estimates in all_estimates:
+            # Find the estimate for this period
+            estimate = next((est for est in estimates if est.period == period), None)
+            
+            if estimate:
+                est_str = f"${estimate.estimate_value:,.2f}M" if estimate.estimate_value is not None else "N/A"
+                if estimate.actual_value is not None:
+                    est_str += f" (A: ${estimate.actual_value:,.2f}M)"
+                row_values.append(est_str)
+            else:
+                row_values.append("N/A")
+        
+        table.add_row(*row_values)
+    
+    console.print(table)
+    
+    # Add revenue growth estimates if we have annual estimates
+    if period_type.lower() == 'annual' and len(sorted_periods) >= 2:
+        console.print("\n[bold]Estimated Annual Revenue Growth:[/bold]")
+        
+        growth_table = Table(show_header=True, header_style="bold")
+        growth_table.add_column("Symbol")
+        growth_table.add_column("Current Period", justify="right")
+        growth_table.add_column("Next Period", justify="right")
+        growth_table.add_column("Year-over-Year Growth", justify="right")
+        
+        for symbol, estimates in all_estimates:
+            if len(estimates) >= 2:
+                # Sort by period to ensure correct order
+                sorted_ests = sorted(estimates, key=lambda e: e.period)
+                
+                if len(sorted_ests) >= 2:
+                    # Calculate YoY growth from current to next year's estimate
+                    current_est = sorted_ests[0].estimate_value
+                    next_est = sorted_ests[1].estimate_value
+                    current_period = sorted_ests[0].period
+                    next_period = sorted_ests[1].period
+                    
+                    if current_est is not None and current_est > 0 and next_est is not None:
+                        growth = ((next_est - current_est) / current_est) * 100
+                        growth_str = f"{growth:.2f}%"
+                        style = "green" if growth > 0 else "red"
+                        
+                        growth_table.add_row(
+                            symbol.upper(), 
+                            f"${current_est:,.2f}M ({current_period})",
+                            f"${next_est:,.2f}M ({next_period})",
+                            growth_str,
+                            style=style
+                        )
+                    else:
+                        growth_table.add_row(symbol.upper(), "Insufficient data", "", "")
+                else:
+                    growth_table.add_row(symbol.upper(), "Insufficient data", "", "")
+            else:
+                growth_table.add_row(symbol.upper(), "Insufficient data", "", "")
+                
+        console.print(growth_table)
+
+
+def display_revenue_growth_visualization(estimates: AnalystEstimates):
+    """
+    Display a visualization of expected revenue growth based on analyst estimates.
+    
+    Args:
+        estimates: The AnalystEstimates object to visualize
+    """
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    
+    console = Console()
+    
+    # Check if we have sufficient data
+    annual_estimates = estimates.annual_revenue_estimates
+    if not annual_estimates or len(annual_estimates) < 2:
+        console.print("[bold yellow]Insufficient revenue forecast data for growth visualization.[/bold yellow]")
+        return
+    
+    # Create header
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", estimates.symbol.upper())
+    if estimates.name:
+        header.add_row("Company:", estimates.name)
+    
+    console.print(Panel(header, title="Revenue Growth Visualization", expand=False))
+    
+    # Sort estimates by period
+    sorted_estimates = sorted(annual_estimates, key=lambda e: e.period)
+    
+    # Identify historical vs. projected data
+    historical = [e for e in sorted_estimates if e.actual_value is not None]
+    projected = [e for e in sorted_estimates if e.actual_value is None]
+    
+    # If we have at least one historical and one projected point, we can visualize growth
+    if len(projected) > 0:
+        # Create visualization table
+        viz_table = Table(show_header=False)
+        viz_table.add_column("Period")
+        viz_table.add_column("Revenue ($M)", justify="right")
+        viz_table.add_column("YoY Growth", justify="right")
+        viz_table.add_column("Visualization", width=40)
+        
+        # Determine max value for scaling the visualization
+        max_value = max([e.estimate_value or 0 for e in sorted_estimates] + 
+                        [e.actual_value or 0 for e in sorted_estimates if e.actual_value is not None])
+        
+        # Show each period
+        prev_value = None
+        
+        for i, estimate in enumerate(sorted_estimates):
+            # Determine historical or projected
+            is_historical = estimate.actual_value is not None
+            value_to_show = estimate.actual_value if is_historical else estimate.estimate_value
+            
+            # Skip if no value to show
+            if value_to_show is None:
+                continue
+                
+            # Format value
+            if is_historical:
+                value_str = f"${value_to_show:,.2f}M (Actual)"
+                bar_style = "green"
+            else:
+                value_str = f"${value_to_show:,.2f}M (Est.)"
+                bar_style = "blue"
+                
+            # Calculate growth
+            growth_str = "N/A"
+            if prev_value is not None and prev_value > 0:
+                growth_pct = ((value_to_show - prev_value) / prev_value) * 100
+                growth_str = f"{growth_pct:.1f}%"
+                
+            # Create bar visualization
+            bar_width = int(30 * value_to_show / max_value) if max_value > 0 else 0
+            bar = f"[{bar_style}]" + "█" * bar_width + f"[/{bar_style}]"
+            
+            # Add row
+            viz_table.add_row(
+                estimate.period,
+                value_str,
+                growth_str,
+                bar
+            )
+            
+            # Update for next iteration
+            prev_value = value_to_show
+            
+        console.print(viz_table)
+        
+        # Add CAGR calculation if we have sufficient data
+        if len(sorted_estimates) >= 2:
+            # Get first and last data points
+            first_est = sorted_estimates[0]
+            last_est = sorted_estimates[-1]
+            
+            first_value = first_est.actual_value if first_est.actual_value is not None else first_est.estimate_value
+            last_value = last_est.actual_value if last_est.actual_value is not None else last_est.estimate_value
+            
+            years_diff = 0
+            try:
+                # Try to extract years from period strings
+                first_year = int(first_est.period.split()[-1])
+                last_year = int(last_est.period.split()[-1])
+                years_diff = last_year - first_year
+            except (ValueError, IndexError):
+                # Fallback to assuming 1 year per estimate
+                years_diff = len(sorted_estimates) - 1
+                
+            # Calculate CAGR
+            if first_value is not None and last_value is not None and first_value > 0 and years_diff > 0:
+                cagr = ((last_value / first_value) ** (1 / years_diff) - 1) * 100
+                
+                console.print(f"\n[bold]Compound Annual Growth Rate (CAGR):[/bold] {cagr:.2f}%")
+                console.print(f"({first_est.period} to {last_est.period}, {years_diff} years)")
+    else:
+        console.print("[yellow]No projected revenue data available for visualization.[/yellow]")
