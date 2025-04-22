@@ -7,6 +7,7 @@ This file will setup and run the CLI commands.
 import sys
 import logging
 from pathlib import Path
+from typing import Optional
 import click
 from app.cli.commands import compare_income_statements_command, expense_breakdown_command, get_income_statement_command, stock, fetch_and_display_quotes, refresh_quotes, export_last as export_last_quotes
 from app.utils.display import create_progress_spinner
@@ -3729,6 +3730,405 @@ def compare_revenue_estimates_shortcut(symbols, period_type, export, output_dir,
         compare_revenue_estimates_command,
         symbols=symbols,
         period_type=period_type,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+
+@analysts_group.command(name="eps-history")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", required=True, help="Period to analyze (e.g. 'Q1 2025' or 'FY 2025')")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export estimate history to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_eps_estimate_history_command(symbol: str, period: str, export: Optional[str], 
+                                    output_dir: Optional[str], use_home_dir: bool):
+    """
+    Show the historical changes in EPS estimates for a specific period.
+    
+    Retrieves and displays how analyst estimates for a specific earnings period
+    have changed over time, showing the trend and accuracy compared to actual 
+    results (if available).
+    
+    The PERIOD must be specified in the format used by the API, typically:
+    - Quarterly periods: "Q1 2025", "Q2 2025", etc.
+    - Annual periods: "FY 2025", "FY 2026", etc.
+    
+    Examples:
+        stockcli analysts eps-history AAPL --period "Q2 2025"
+        stockcli analysts eps-history MSFT --period "FY 2025" --export json
+    """
+    from app.models.analysts_estimates import AnalystEstimates
+    from app.utils.display import display_eps_estimate_history, create_progress_spinner
+    from app.utils.export import export_eps_estimate_history, get_default_export_dir, get_home_export_dir
+    from pathlib import Path
+    
+    # Normalize symbol
+    symbol = symbol.upper()
+    
+    # Fetch estimates data
+    with create_progress_spinner(f"Fetching analyst estimates for {symbol}..."):
+        try:
+            response = client.get_analyst_estimates(symbol)
+            estimates = AnalystEstimates.from_api_response(response)
+            
+            # Get the estimate history for the specified period
+            estimate_history = estimates.get_eps_estimate_history(period)
+            
+            if estimate_history is None:
+                click.echo(f"No EPS estimate history found for {symbol} period '{period}'")
+                click.echo(f"Available quarterly periods: {', '.join(e.period for e in estimates.quarterly_eps_estimates)}")
+                click.echo(f"Available annual periods: {', '.join(e.period for e in estimates.annual_eps_estimates)}")
+                return
+            
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display the estimate history
+    display_eps_estimate_history(estimate_history)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+        
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+        
+        export_results = export_eps_estimate_history(symbol, estimate_history, export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported EPS estimate history to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+
+@analysts_shortcut.command(name="eps-history")
+@click.argument("symbol", required=True)
+@click.option("--period", "-p", required=True, help="Period to analyze (e.g. 'Q1 2025' or 'FY 2025')")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export estimate history to file format")  
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_eps_estimate_history_shortcut(symbol: str, period: str, export: Optional[str], 
+                                     output_dir: Optional[str], use_home_dir: bool):
+    """Shortcut for 'analysts eps-history' command."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_eps_estimate_history_command,
+        symbol=symbol,
+        period=period,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+@analysts_shortcut.command(name="eps-revisions")
+@click.argument("symbol", required=True)
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed revision breakdown by period")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export EPS revisions to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_eps_revisions_shortcut(symbol: str, detailed: bool, export: Optional[str],
+                              output_dir: Optional[str], use_home_dir: bool):
+    """Shortcut for 'analysts eps-revisions' command."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_eps_revisions_command,
+        symbol=symbol,
+        detailed=detailed,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+@analysts_group.command(name="eps-revisions")
+@click.argument("symbol", required=True)
+@click.option("--detailed", "-d", is_flag=True, help="Show detailed revision breakdown by period")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export EPS revisions to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_eps_revisions_command(symbol: str, detailed: bool, export: Optional[str],
+                             output_dir: Optional[str], use_home_dir: bool):
+    """
+    Show analysts' revisions of future EPS forecasts.
+    
+    Retrieves and displays how analysts have revised their quarterly and annual EPS
+    forecasts for a company over the last week and month, showing upgrade and
+    downgrade trends.
+    
+    Examples:
+        stockcli analysts eps-revisions AAPL
+        stockcli analysts eps-revisions MSFT --detailed
+        stockcli analysts eps-revisions GOOGL --export json
+    """
+    from app.models.eps_revisions import EpsRevisions
+    from app.utils.display import display_eps_revisions, create_progress_spinner
+    from app.utils.export import export_eps_revisions, get_default_export_dir, get_home_export_dir
+    from pathlib import Path
+    
+    # Normalize symbol
+    symbol = symbol.upper()
+    
+    # Fetch revisions data
+    with create_progress_spinner(f"Fetching EPS revisions for {symbol}..."):
+        try:
+            response = client.get_eps_revisions(symbol)
+            revisions = EpsRevisions.from_api_response(response)
+            
+            # Check if we have any revisions
+            if (revisions.weekly.total_revisions == 0 and 
+                revisions.monthly.total_revisions == 0):
+                click.echo(f"No EPS revisions found for {symbol} over the last month.")
+                return
+                
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display the revisions
+    display_eps_revisions(revisions, detailed)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_eps_revisions(revisions, export_formats, export_output_dir, detailed)
+        
+        if export_results:
+            click.echo("\nExported EPS revisions to:")
+            for fmt, path in export_results.items():
+                if fmt == 'csv' and isinstance(path, list):
+                    click.echo(f"  CSV files:")
+                    for csv_path in path:
+                        click.echo(f"    - {csv_path}")
+                else:
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+@analysts_group.command(name="growth-estimates")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export growth estimates to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_growth_estimates_command(symbol: str, export: Optional[str],
+                                output_dir: Optional[str], use_home_dir: bool):
+    """
+    Show consensus analyst estimates for company growth rates.
+    
+    Retrieves and displays consensus analyst estimates for growth rates across
+    various periods (current quarter, next quarter, current year, next year,
+    next 5 years, past 5 years) along with sales and EPS growth forecasts.
+    
+    Examples:
+        stockcli analysts growth-estimates AAPL
+        stockcli analysts growth-estimates MSFT --export json
+    """
+    from app.models.growth_estimates import GrowthEstimates
+    from app.utils.display import display_growth_estimates, create_progress_spinner
+    from app.utils.export import export_growth_estimates, get_default_export_dir, get_home_export_dir
+    from pathlib import Path
+    
+    # Normalize symbol
+    symbol = symbol.upper()
+    
+    # Fetch growth estimates data
+    with create_progress_spinner(f"Fetching growth estimates for {symbol}..."):
+        try:
+            response = client.get_growth_estimates(symbol)
+            estimates = GrowthEstimates.from_api_response(response)
+                
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display the growth estimates
+    display_growth_estimates(estimates)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_growth_estimates(estimates, export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported growth estimates to:")
+            for fmt, path in export_results.items():
+                click.echo(f"  {fmt.upper()}: {path}")
+
+@analysts_shortcut.command(name="growth-estimates")
+@click.argument("symbol", required=True)
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export growth estimates to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_growth_estimates_shortcut(symbol: str, export: Optional[str],
+                                 output_dir: Optional[str], use_home_dir: bool):
+    """Shortcut for 'analysts growth-estimates' command."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_growth_estimates_command,
+        symbol=symbol,
+        export=export,
+        output_dir=output_dir,
+        use_home_dir=use_home_dir
+    )
+
+@analysts_group.command(name="recommendations")
+@click.argument("symbol", required=True)
+@click.option("--detailed", "-d", is_flag=True, help="Show individual analyst recommendations")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export analyst recommendations to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_analyst_recommendations_command(symbol: str, detailed: bool, export: Optional[str],
+                                      output_dir: Optional[str], use_home_dir: bool):
+    """
+    Show analyst recommendations consensus and classification.
+    
+    Retrieves analyst recommendations for a stock and calculates the average score,
+    classifying it as Strong Buy, Buy, Hold, Sell, or Strong Sell based on consensus.
+    Also shows the distribution of recommendations and individual analyst ratings.
+    
+    Examples:
+        stockcli analysts recommendations AAPL
+        stockcli analysts recommendations MSFT --detailed
+        stockcli analysts recommendations GOOGL --export json
+    """
+    from app.models.analyst_recommendation import AnalystRecommendations
+    from app.utils.display import display_analyst_recommendations, create_progress_spinner
+    from app.utils.export import export_analyst_recommendations, get_default_export_dir, get_home_export_dir
+    from pathlib import Path
+    
+    # Normalize symbol
+    symbol = symbol.upper()
+    
+    # Fetch recommendations data
+    with create_progress_spinner(f"Fetching analyst recommendations for {symbol}..."):
+        try:
+            response = client.get_analyst_recommendations(symbol)
+            recommendations = AnalystRecommendations.from_api_response(response)
+            
+            # Check if we have any recommendations
+            if recommendations.consensus.total_analysts == 0:
+                click.echo(f"No analyst recommendations found for {symbol}.")
+                return
+                
+        except TwelveDataAPIError as e:
+            click.echo(f"Error: {e}")
+            return
+    
+    # Display the recommendations
+    display_analyst_recommendations(recommendations, detailed)
+    
+    # Export if requested
+    if export:
+        # Determine export formats
+        export_formats = []
+        if export == 'json':
+            export_formats = ['json']
+        elif export == 'csv':
+            export_formats = ['csv']
+        elif export == 'both':
+            export_formats = ['json', 'csv']
+            
+        # Determine output directory
+        if output_dir:
+            export_output_dir = Path(output_dir).expanduser().resolve()
+        elif use_home_dir:
+            export_output_dir = get_home_export_dir()
+        else:
+            export_output_dir = get_default_export_dir()
+            
+        export_results = export_analyst_recommendations(recommendations, export_formats, export_output_dir)
+        
+        if export_results:
+            click.echo("\nExported analyst recommendations to:")
+            for fmt, path in export_results.items():
+                if fmt == 'csv' and isinstance(path, list):
+                    click.echo(f"  CSV files:")
+                    for csv_path in path:
+                        click.echo(f"    - {csv_path}")
+                else:
+                    click.echo(f"  {fmt.upper()}: {path}")
+
+@analysts_shortcut.command(name="recommendations")
+@click.argument("symbol", required=True)
+@click.option("--detailed", "-d", is_flag=True, help="Show individual analyst recommendations")
+@click.option("--export", type=click.Choice(['json', 'csv', 'both'], case_sensitive=False),
+              help="Export analyst recommendations to file format")
+@click.option("--output-dir", type=click.Path(file_okay=False),
+              help="Directory to save exported files")
+@click.option("--use-home-dir", is_flag=True,
+              help="Save exports to user's home directory instead of project directory")
+def get_analyst_recommendations_shortcut(symbol: str, detailed: bool, export: Optional[str],
+                                       output_dir: Optional[str], use_home_dir: bool):
+    """Shortcut for 'analysts recommendations' command."""
+    ctx = click.get_current_context()
+    ctx.invoke(
+        get_analyst_recommendations_command,
+        symbol=symbol,
+        detailed=detailed,
         export=export,
         output_dir=output_dir,
         use_home_dir=use_home_dir

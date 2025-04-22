@@ -14,6 +14,7 @@ from pathlib import Path
 
 from app.api.twelve_data import TwelveDataAPIError, client
 # from app.main import cli
+# from app.main import analysts_group
 from app.models.bond import Bond
 from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.etf import ETF

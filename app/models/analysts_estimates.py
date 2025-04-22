@@ -589,3 +589,114 @@ class AnalystEstimates:
         """Get headers for recommendations CSV export"""
         return ["Period", "Strong Buy", "Buy", "Hold", "Sell", "Strong Sell", 
                 "Total Analysts", "Average Score", "Recommendation"]
+    
+    def get_eps_estimate_history(self, period: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a breakdown of how EPS estimates for a specific period have changed over time.
+        
+        Args:
+            period: The period to analyze (e.g., "Q2 2025" or "FY 2025")
+        
+        Returns:
+            Dictionary containing the historical EPS estimate data for the specified period,
+            or None if no history is available for the period
+        """
+        # Check in both quarterly and annual estimates
+        target_estimate = None
+        estimate_type = None
+        
+        # Look in quarterly estimates first
+        for estimate in self.quarterly_eps_estimates:
+            if estimate.period == period:
+                target_estimate = estimate
+                estimate_type = "quarterly"
+                break
+        
+        # If not found in quarterly, look in annual
+        if target_estimate is None:
+            for estimate in self.annual_eps_estimates:
+                if estimate.period == period:
+                    target_estimate = estimate
+                    estimate_type = "annual"
+                    break
+        
+        # If we didn't find the period, return None
+        if target_estimate is None:
+            return None
+        
+        # Check if we have estimate history in raw_data
+        if not self.raw_data:
+            return None
+        
+        # Retrieve the appropriate history data based on estimate type
+        history_key = "quarterly_earnings_estimate_history" if estimate_type == "quarterly" else "yearly_earnings_estimate_history"
+        history_data = self.raw_data.get(history_key, [])
+        
+        if not history_data:
+            return None
+        
+        # Find the history for our target period
+        period_history = None
+        for history in history_data:
+            if history.get("period") == period:
+                period_history = history
+                break
+        
+        if not period_history or "history" not in period_history:
+            return None
+        
+        # Process the history data
+        processed_history = {
+            "period": period,
+            "period_end_date": target_estimate.period_end_date,
+            "current_estimate": target_estimate.estimate_value,
+            "analyst_count": target_estimate.estimate_count,
+            "actual_value": target_estimate.actual_value,
+            "historical_estimates": []
+        }
+        
+        # Parse historical estimates
+        for estimate_point in period_history.get("history", []):
+            try:
+                date_str = estimate_point.get("date")
+                value = float(estimate_point.get("estimate"))
+                
+                # Convert date string to datetime object
+                date_obj = None
+                if date_str:
+                    date_obj = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                
+                processed_history["historical_estimates"].append({
+                    "date": date_obj,
+                    "date_str": date_str,
+                    "estimate_value": value
+                })
+            except (ValueError, TypeError, AttributeError) as e:
+                # Skip invalid data points
+                continue
+        
+        # Sort historical estimates by date (earliest first)
+        processed_history["historical_estimates"].sort(key=lambda x: x["date"] if x["date"] else datetime.min)
+        
+        # Calculate changes between consecutive estimates
+        if len(processed_history["historical_estimates"]) > 1:
+            for i in range(1, len(processed_history["historical_estimates"])):
+                current = processed_history["historical_estimates"][i]
+                previous = processed_history["historical_estimates"][i-1]
+                
+                change = current["estimate_value"] - previous["estimate_value"]
+                change_percent = (change / previous["estimate_value"]) * 100 if previous["estimate_value"] else 0
+                
+                current["change_from_previous"] = change
+                current["change_percent"] = change_percent
+        
+        # Add comparison to actual (if available)
+        if target_estimate.actual_value:
+            for point in processed_history["historical_estimates"]:
+                diff_from_actual = point["estimate_value"] - target_estimate.actual_value
+                diff_percent = (diff_from_actual / target_estimate.actual_value) * 100 if target_estimate.actual_value else 0
+                
+                point["diff_from_actual"] = diff_from_actual
+                point["diff_from_actual_percent"] = diff_percent
+        
+        return processed_history

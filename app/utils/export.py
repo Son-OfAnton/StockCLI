@@ -11,12 +11,15 @@ from pathlib import Path
 from datetime import date, datetime
 from typing import List, Dict, Any, Optional, Union
 
+from app.models.analyst_recommendation import AnalystRecommendations
 from app.models.analysts_estimates import AnalystEstimates
 from app.models.balance_sheet import BalanceSheet
 from app.models.cash_flow import CashFlow
 from app.models.divided_calendar import DividendCalendar, DividendCalendarEvent
 from app.models.dividend import Dividend, DividendHistory
+from app.models.eps_revisions import EpsRevisions
 from app.models.executives import Executive, ManagementTeam
+from app.models.growth_estimates import GrowthEstimates
 from app.models.income_statement import IncomeStatement
 from app.models.market_cap import MarketCapHistory
 from app.models.splits import SplitHistory, StockSplit
@@ -2976,5 +2979,403 @@ def export_revenue_comparison(symbols: List[str], estimates_list: List[AnalystEs
                         ])
                     
         result['csv'] = str(csv_path)
+    
+    return result
+
+def export_eps_estimate_history(symbol: str, estimate_history: Dict[str, Any], 
+                               formats: List[str], output_dir: Path) -> Dict[str, str]:
+    """
+    Export EPS estimate history to JSON and/or CSV format.
+    
+    Args:
+        symbol: Stock symbol
+        estimate_history: The EPS estimate history data
+        formats: List of formats to export (json, csv or both)
+        output_dir: Directory to save the exported files
+        
+    Returns:
+        Dict mapping format to file path
+    """
+    from pathlib import Path
+    import json
+    import csv
+    from datetime import datetime
+    
+    # Create result dictionary
+    result = {}
+    
+    # Generate filename base
+    period = estimate_history["period"]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_filename = f"eps_history_{symbol}_{period.replace(' ', '_')}_{timestamp}"
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Export to JSON if requested
+    if 'json' in formats:
+        json_path = output_dir / f"{base_filename}.json"
+        
+        # Convert datetime objects to strings for JSON serialization
+        json_data = {
+            "symbol": symbol,
+            "period": estimate_history["period"],
+            "period_end_date": estimate_history["period_end_date"],
+            "current_estimate": estimate_history["current_estimate"],
+            "analyst_count": estimate_history["analyst_count"],
+            "actual_value": estimate_history["actual_value"],
+            "historical_estimates": []
+        }
+        
+        # Format historical estimates for JSON
+        for point in estimate_history["historical_estimates"]:
+            point_data = {
+                "date": point["date"].isoformat() if point["date"] else point["date_str"],
+                "estimate_value": point["estimate_value"]
+            }
+            
+            # Add optional fields if present
+            if "change_from_previous" in point:
+                point_data["change_from_previous"] = point["change_from_previous"]
+                point_data["change_percent"] = point["change_percent"]
+            
+            if "diff_from_actual" in point:
+                point_data["diff_from_actual"] = point["diff_from_actual"]
+                point_data["diff_from_actual_percent"] = point["diff_from_actual_percent"]
+            
+            json_data["historical_estimates"].append(point_data)
+        
+        # Write to JSON file
+        with open(json_path, 'w') as f:
+            json.dump(json_data, f, indent=2)
+            
+        result['json'] = str(json_path)
+    
+    # Export to CSV if requested
+    if 'csv' in formats:
+        csv_path = output_dir / f"{base_filename}.csv"
+        
+        with open(csv_path, 'w', newline='') as f:
+            # Write metadata as comments
+            f.write(f"# EPS Estimate History for {symbol} - {period}\n")
+            f.write(f"# Period End Date: {estimate_history['period_end_date']}\n")
+            f.write(f"# Current Estimate: ${estimate_history['current_estimate']:.2f}\n")
+            f.write(f"# Analyst Count: {estimate_history['analyst_count']}\n")
+            if estimate_history["actual_value"] is not None:
+                f.write(f"# Actual EPS: ${estimate_history['actual_value']:.2f}\n")
+            f.write(f"# Generated: {datetime.now().isoformat()}\n")
+            f.write("#\n")
+            
+            # Determine headers based on available data
+            headers = ["Date", "Estimate Value"]
+            
+            has_changes = False
+            has_actual_comparison = False
+            
+            if estimate_history["historical_estimates"] and "change_from_previous" in estimate_history["historical_estimates"][1:][0]:
+                headers.extend(["Change", "Change %"])
+                has_changes = True
+                
+            if estimate_history["actual_value"] is not None and estimate_history["historical_estimates"] and "diff_from_actual" in estimate_history["historical_estimates"][0]:
+                headers.extend(["Diff from Actual", "Error %"])
+                has_actual_comparison = True
+            
+            # Create CSV writer and write headers
+            csv_writer = csv.writer(f)
+            csv_writer.writerow(headers)
+            
+            # Write data rows
+            for point in estimate_history["historical_estimates"]:
+                date_str = point["date"].strftime("%Y-%m-%d") if point["date"] else point["date_str"]
+                
+                row = [date_str, f"{point['estimate_value']:.2f}"]
+                
+                if has_changes and "change_from_previous" in point:
+                    row.append(f"{point['change_from_previous']:.2f}")
+                    row.append(f"{point['change_percent']:.2f}%")
+                elif has_changes:
+                    row.extend(["", ""])
+                
+                if has_actual_comparison and "diff_from_actual" in point:
+                    row.append(f"{point['diff_from_actual']:.2f}")
+                    row.append(f"{point['diff_from_actual_percent']:.2f}%")
+                elif has_actual_comparison:
+                    row.extend(["", ""])
+                
+                csv_writer.writerow(row)
+        
+        result['csv'] = str(csv_path)
+    
+    return result
+
+def export_eps_revisions(revisions: 'EpsRevisions', formats: List[str], 
+                        output_dir: Path, detailed: bool = False) -> Dict[str, str]:
+    """
+    Export EPS revisions data to JSON and/or CSV formats.
+    
+    Args:
+        revisions: The EpsRevisions object to export
+        formats: List of formats to export ('json', 'csv' or both)
+        output_dir: Directory to save the exported files
+        detailed: Whether to include detailed breakdown in CSV export
+        
+    Returns:
+        Dict mapping format to file path
+    """
+    result = {}
+    
+    # Generate filename base
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_filename = f"eps_revisions_{revisions.symbol}_{timestamp}"
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Export to JSON if requested
+    if 'json' in formats:
+        json_path = output_dir / f"{base_filename}.json"
+        
+        with open(json_path, 'w') as f:
+            json.dump(revisions.to_dict(), f, indent=2)
+            
+        result['json'] = str(json_path)
+    
+    # Export to CSV if requested
+    if 'csv' in formats:
+        if detailed:
+            # Export detailed CSV with quarterly/annual breakdown
+            detailed_csv_path = output_dir / f"{base_filename}_detailed.csv"
+            
+            with open(detailed_csv_path, 'w', newline='') as f:
+                # Write metadata as comments
+                f.write(f"# EPS Revisions for {revisions.symbol}")
+                if revisions.name:
+                    f.write(f" ({revisions.name})")
+                f.write("\n")
+                
+                if revisions.last_updated:
+                    f.write(f"# Last Updated: {revisions.last_updated}\n")
+                f.write(f"# Generated: {datetime.now().isoformat()}\n")
+                f.write("#\n")
+                
+                # Get headers and rows
+                headers = EpsRevisions.get_csv_headers_detailed()
+                rows = revisions.get_csv_rows_detailed()
+                
+                # Create CSV writer and write data
+                writer = csv.DictWriter(f, fieldnames=headers)
+                writer.writeheader()
+                for row in rows:
+                    writer.writerow(row)
+            
+            result['csv_detailed'] = str(detailed_csv_path)
+        
+        # Export summary CSV
+        summary_csv_path = output_dir / f"{base_filename}_summary.csv"
+        
+        with open(summary_csv_path, 'w', newline='') as f:
+            # Write metadata as comments
+            f.write(f"# EPS Revisions Summary for {revisions.symbol}")
+            if revisions.name:
+                f.write(f" ({revisions.name})")
+            f.write("\n")
+            
+            if revisions.last_updated:
+                f.write(f"# Last Updated: {revisions.last_updated}\n")
+            f.write(f"# Generated: {datetime.now().isoformat()}\n")
+            f.write("#\n")
+            
+            # Get headers and rows
+            headers = EpsRevisions.get_csv_headers_summary()
+            rows = revisions.get_csv_rows_summary()
+            
+            # Create CSV writer and write data
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+        
+        result['csv_summary'] = str(summary_csv_path)
+        
+        # If we exported both detailed and summary CSVs, combine them in the result
+        if 'csv_detailed' in result:
+            result['csv'] = [result['csv_summary'], result['csv_detailed']]
+        else:
+            result['csv'] = result['csv_summary']
+    
+    return 
+
+def export_growth_estimates(estimates: 'GrowthEstimates', formats: List[str], 
+                           output_dir: Path) -> Dict[str, str]:
+    """
+    Export growth estimates data to JSON and/or CSV formats.
+    
+    Args:
+        estimates: The GrowthEstimates object to export
+        formats: List of formats to export ('json', 'csv' or both)
+        output_dir: Directory to save the exported files
+        
+    Returns:
+        Dict mapping format to file path
+    """
+    result = {}
+    
+    # Generate filename base
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_filename = f"growth_estimates_{estimates.symbol}_{timestamp}"
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Export to JSON if requested
+    if 'json' in formats:
+        json_path = output_dir / f"{base_filename}.json"
+        
+        with open(json_path, 'w') as f:
+            json.dump(estimates.to_dict(), f, indent=2)
+            
+        result['json'] = str(json_path)
+    
+    # Export to CSV if requested
+    if 'csv' in formats:
+        csv_path = output_dir / f"{base_filename}.csv"
+        
+        with open(csv_path, 'w', newline='') as f:
+            # Write metadata as comments
+            f.write(f"# Growth Estimates for {estimates.symbol}")
+            if estimates.name:
+                f.write(f" ({estimates.name})")
+            f.write("\n")
+            
+            if estimates.last_updated:
+                f.write(f"# Last Updated: {estimates.last_updated}\n")
+            f.write(f"# Generated: {datetime.now().isoformat()}\n")
+            f.write("#\n")
+            
+            # Get headers and rows
+            headers = GrowthEstimates.get_csv_headers()
+            rows = estimates.get_csv_rows()
+            
+            # Create CSV writer and write data
+            writer = csv.DictWriter(f, fieldnames=headers)
+            writer.writeheader()
+            for row in rows:
+                writer.writerow(row)
+        
+        result['csv'] = str(csv_path)
+    
+    return result
+
+def export_analyst_recommendations(recommendations: 'AnalystRecommendations', 
+                                 formats: List[str], output_dir: Path) -> Dict[str, str]:
+    """
+    Export analyst recommendations data to JSON and/or CSV formats.
+    
+    Args:
+        recommendations: The AnalystRecommendations object to export
+        formats: List of formats to export ('json', 'csv' or both)
+        output_dir: Directory to save the exported files
+        
+    Returns:
+        Dict mapping format to file path
+    """
+    result = {}
+    
+    # Generate filename base
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_filename = f"analyst_recommendations_{recommendations.symbol}_{timestamp}"
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Export to JSON if requested
+    if 'json' in formats:
+        json_path = output_dir / f"{base_filename}.json"
+        
+        with open(json_path, 'w') as f:
+            json.dump(recommendations.to_dict(), f, indent=2)
+            
+        result['json'] = str(json_path)
+    
+    # Export to CSV if requested
+    if 'csv' in formats:
+        # Export consensus summary to CSV
+        consensus_csv_path = output_dir / f"{base_filename}_consensus.csv"
+        
+        with open(consensus_csv_path, 'w', newline='') as f:
+            # Write metadata as comments
+            f.write(f"# Analyst Recommendations Consensus for {recommendations.symbol}")
+            if recommendations.name:
+                f.write(f" ({recommendations.name})")
+            f.write("\n")
+            
+            if recommendations.last_updated:
+                f.write(f"# Last Updated: {recommendations.last_updated}\n")
+            f.write(f"# Generated: {datetime.now().isoformat()}\n")
+            f.write("#\n")
+            
+            # Write consensus data
+            writer = csv.writer(f)
+            writer.writerow(["Metric", "Value"])
+            writer.writerow(["Symbol", recommendations.symbol])
+            if recommendations.name:
+                writer.writerow(["Company", recommendations.name])
+            writer.writerow(["Classification", recommendations.consensus.classification])
+            writer.writerow(["Average Score", f"{recommendations.consensus.average_score:.2f}"])
+            writer.writerow(["Total Analysts", recommendations.consensus.total_analysts])
+            writer.writerow(["Strong Buy", recommendations.consensus.strong_buy])
+            writer.writerow(["Buy", recommendations.consensus.buy])
+            writer.writerow(["Hold", recommendations.consensus.hold])
+            writer.writerow(["Sell", recommendations.consensus.sell])
+            writer.writerow(["Strong Sell", recommendations.consensus.strong_sell])
+            
+            # Write distribution percentages
+            f.write("#\n# Distribution Percentages\n")
+            writer.writerow(["Rating", "Percentage"])
+            percentages = recommendations.consensus.get_distribution_percentages()
+            writer.writerow(["Strong Buy", f"{percentages['strong_buy']:.1f}%"])
+            writer.writerow(["Buy", f"{percentages['buy']:.1f}%"])
+            writer.writerow(["Hold", f"{percentages['hold']:.1f}%"])
+            writer.writerow(["Sell", f"{percentages['sell']:.1f}%"])
+            writer.writerow(["Strong Sell", f"{percentages['strong_sell']:.1f}%"])
+            
+            # Write buy/hold/sell ratio
+            f.write("#\n# Buy/Hold/Sell Ratio\n")
+            buy_percent, hold_percent, sell_percent = recommendations.consensus.get_buy_hold_sell_ratio()
+            writer.writerow(["Category", "Percentage"])
+            writer.writerow(["Buy", f"{buy_percent:.1f}%"])
+            writer.writerow(["Hold", f"{hold_percent:.1f}%"])
+            writer.writerow(["Sell", f"{sell_percent:.1f}%"])
+        
+        result['csv_consensus'] = str(consensus_csv_path)
+        
+        # Export individual recommendations to CSV if there are any
+        if recommendations.recommendations:
+            recs_csv_path = output_dir / f"{base_filename}_individual.csv"
+            
+            with open(recs_csv_path, 'w', newline='') as f:
+                f.write(f"# Individual Analyst Recommendations for {recommendations.symbol}")
+                if recommendations.name:
+                    f.write(f" ({recommendations.name})")
+                f.write("\n")
+                
+                if recommendations.last_updated:
+                    f.write(f"# Last Updated: {recommendations.last_updated}\n")
+                f.write(f"# Generated: {datetime.now().isoformat()}\n")
+                f.write("#\n")
+                
+                writer = csv.writer(f)
+                writer.writerow(["Firm", "Rating", "Action", "Target Price", "Date"])
+                
+                for rec in sorted(recommendations.recommendations, key=lambda r: r.date if r.date else "", reverse=True):
+                    target_price = f"{rec.target_price:.2f}" if rec.target_price is not None else "N/A"
+                    writer.writerow([rec.firm, rec.rating, rec.action, target_price, rec.date])
+            
+            result['csv_individual'] = str(recs_csv_path)
+            
+            # Bundle both CSV files together in the result
+            result['csv'] = [result['csv_consensus'], result['csv_individual']]
+        else:
+            result['csv'] = result['csv_consensus']
     
     return result

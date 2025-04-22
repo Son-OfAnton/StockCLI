@@ -2322,6 +2322,78 @@ class TwelveDataClient:
             raise TwelveDataAPIError(f"No analyst estimates available for {symbol}")
         
         return response
+    
+    def get_eps_revisions(self, symbol: str) -> Dict:
+        """
+        Fetch analysts' EPS revisions for a company.
+        
+        Retrieves all revisions made by analysts to quarterly and annual EPS forecasts
+        over the last week and month.
+        
+        Args:
+            symbol: The stock symbol
+            
+        Returns:
+            Dict containing EPS revision data
+        """
+        params = {
+            'symbol': symbol
+        }
+        
+        response = self._make_request('eps_revisions', params)
+        
+        if 'symbol' not in response:
+            raise TwelveDataAPIError(f"No EPS revision data available for {symbol}")
+        
+        return response
+    
+    def get_growth_estimates(self, symbol: str) -> Dict:
+        """
+        Fetch consensus analyst growth estimates for a company.
+        
+        Retrieves analyst consensus estimates for growth rates across various periods
+        (current quarter, next quarter, current year, next year, next 5 years).
+        
+        Args:
+            symbol: The stock symbol
+            
+        Returns:
+            Dict containing growth estimates data
+        """
+        params = {
+            'symbol': symbol
+        }
+        
+        response = self._make_request('growth_estimates', params)
+        
+        if 'symbol' not in response:
+            raise TwelveDataAPIError(f"No growth estimates data available for {symbol}")
+        
+        return response
+    
+    def get_analyst_recommendations(self, symbol: str) -> Dict:
+        """
+        Fetch analyst recommendations for a company.
+        
+        Retrieves current analyst recommendations including buy/sell/hold ratings
+        and consensus data.
+        
+        Args:
+            symbol: The stock symbol
+            
+        Returns:
+            Dict containing analyst recommendation data
+        """
+        params = {
+            'symbol': symbol
+        }
+        
+        response = self._make_request('recommendations', params)
+        
+        if 'symbol' not in response:
+            raise TwelveDataAPIError(f"No analyst recommendation data available for {symbol}")
+        
+        return response
 
 
 # Initialize the TwelveData client

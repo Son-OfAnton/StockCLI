@@ -14,6 +14,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskPr
 from rich.panel import Panel
 from rich.box import Box
 
+from app.models.analyst_recommendation import AnalystRecommendations
 from app.models.analysts_estimates import AnalystEstimates
 from app.models.balance_sheet import BalanceSheet
 from app.models.bond import Bond
@@ -21,10 +22,12 @@ from app.models.cash_flow import CashFlow
 from app.models.commodity import CommodityGroup, CommodityPair
 from app.models.divided_calendar import DividendCalendar, DividendCalendarEvent
 from app.models.dividend import DividendHistory
+from app.models.eps_revisions import EpsRevisions
 from app.models.etf import ETF
 from app.models.exchange_details import ExchangeSchedule
 from app.models.executives import Executive, ManagementTeam
 from app.models.forex import ForexRate
+from app.models.growth_estimates import GrowthEstimates
 from app.models.income_statement import IncomeStatement
 from app.models.market_cap import MarketCapHistory, MarketCapPoint
 from app.models.splits import SplitHistory
@@ -6784,3 +6787,818 @@ def display_revenue_growth_visualization(estimates: AnalystEstimates):
                 console.print(f"({first_est.period} to {last_est.period}, {years_diff} years)")
     else:
         console.print("[yellow]No projected revenue data available for visualization.[/yellow]")
+
+def display_eps_estimate_history(estimate_history: Dict[str, Any]) -> None:
+    """
+    Display the historical EPS estimate changes for a specific period.
+    
+    Args:
+        estimate_history: Dictionary containing the historical EPS estimates
+    """
+    if not estimate_history:
+        console.print("[yellow]No historical EPS estimate data available for this period.[/yellow]")
+        return
+    
+    # Create a title panel
+    period_str = estimate_history["period"]
+    current_estimate = estimate_history["current_estimate"]
+    analyst_count = estimate_history["analyst_count"]
+    actual_value = estimate_history["actual_value"]
+    
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Period:", period_str)
+    header.add_row("Period End Date:", estimate_history["period_end_date"])
+    header.add_row("Current Estimate:", f"${current_estimate:.2f}")
+    header.add_row("Analyst Count:", str(analyst_count))
+    
+    if actual_value is not None:
+        header.add_row("Actual EPS:", f"${actual_value:.2f}")
+        
+        # Calculate accuracy
+        error = current_estimate - actual_value
+        error_percent = (error / actual_value) * 100 if actual_value else 0
+        accuracy_str = f"{error:.2f} ({error_percent:.2f}%)"
+        accuracy_style = "red" if error > 0 else "green" if error < 0 else "white"
+        header.add_row("Estimate Error:", f"[{accuracy_style}]{accuracy_str}[/{accuracy_style}]")
+    
+    console.print(Panel(header, title=f"EPS Estimate History for {period_str}", expand=False))
+    
+    # Create table for historical estimates
+    history = estimate_history.get("historical_estimates", [])
+    if not history:
+        console.print("[yellow]No historical estimates available.[/yellow]")
+        return
+    
+    table = Table(show_header=True, header_style="bold")
+    table.add_column("Date")
+    table.add_column("Estimate", justify="right")
+    table.add_column("Change", justify="right")
+    table.add_column("% Change", justify="right")
+    
+    if actual_value is not None:
+        table.add_column("Diff from Actual", justify="right")
+        table.add_column("% Error", justify="right")
+    
+    # Add rows for each historical estimate
+    for i, point in enumerate(history):
+        date_str = point["date_str"]
+        formatted_date = date_str
+        if point["date"]:
+            formatted_date = point["date"].strftime("%Y-%m-%d")
+        
+        estimate_value = f"${point['estimate_value']:.2f}"
+        
+        # Format change from previous
+        change_str = ""
+        change_percent_str = ""
+        row_style = None
+        
+        if "change_from_previous" in point:
+            change = point["change_from_previous"]
+            change_percent = point["change_percent"]
+            
+            change_sign = "+" if change > 0 else ""
+            change_str = f"{change_sign}{change:.2f}"
+            change_percent_str = f"{change_sign}{change_percent:.2f}%"
+            
+            # Set color based on direction of change
+            row_style = "green" if change > 0 else "red" if change < 0 else None
+        
+        # Create row values
+        row_values = [formatted_date, estimate_value, change_str, change_percent_str]
+        
+        # Add actual comparison if available
+        if actual_value is not None and "diff_from_actual" in point:
+            diff = point["diff_from_actual"]
+            diff_percent = point["diff_from_actual_percent"]
+            
+            diff_sign = "+" if diff > 0 else ""
+            diff_str = f"{diff_sign}{diff:.2f}"
+            diff_percent_str = f"{diff_sign}{diff_percent:.2f}%"
+            
+            diff_style = "red" if diff > 0 else "green" if diff < 0 else None
+            
+            row_values.append(f"[{diff_style}]{diff_str}[/{diff_style}]" if diff_style else diff_str)
+            row_values.append(f"[{diff_style}]{diff_percent_str}[/{diff_style}]" if diff_style else diff_percent_str)
+        
+        # Add the row with appropriate style
+        if row_style:
+            table.add_row(*row_values, style=row_style)
+        else:
+            table.add_row(*row_values)
+    
+    console.print(table)
+    
+    # Create a visualization of the estimate changes over time
+    if len(history) > 1:
+        console.print("\n[bold]EPS Estimate Trend:[/bold]")
+        
+        # Prepare data for visualization
+        dates = [point["date"] for point in history if point["date"]]
+        estimates = [point["estimate_value"] for point in history]
+        
+        # Find value range for scaling
+        min_value = min(estimates)
+        max_value = max(estimates)
+        value_range = max_value - min_value
+        
+        if value_range == 0:
+            value_range = 1  # Avoid division by zero
+        
+        # Create visualization
+        viz_table = Table(show_header=False, box=None, padding=(0, 1, 0, 1))
+        viz_table.add_column("Date")
+        viz_table.add_column("Value")
+        viz_table.add_column("Chart", width=40)
+        
+        for i, point in enumerate(history):
+            date_str = point["date"].strftime("%Y-%m-%d") if point["date"] else point["date_str"]
+            estimate = point["estimate_value"]
+            
+            # Calculate position on chart (0-30 range)
+            position = int(30 * (estimate - min_value) / value_range) if value_range else 15
+            
+            # Create the bar
+            bar = " " * position + "●"
+            
+            # Determine color based on comparison to actual value if available
+            bar_style = None
+            if actual_value is not None:
+                if estimate > actual_value:
+                    bar_style = "red"  # Overestimated
+                elif estimate < actual_value:
+                    bar_style = "green"  # Underestimated
+                else:
+                    bar_style = "white"  # Exactly right
+            else:
+                # If no actual value, color based on trend
+                if i > 0:
+                    prev_estimate = history[i-1]["estimate_value"]
+                    if estimate > prev_estimate:
+                        bar_style = "green"
+                    elif estimate < prev_estimate:
+                        bar_style = "red"
+            
+            viz_table.add_row(
+                date_str,
+                f"${estimate:.2f}",
+                f"[{bar_style}]{bar}[/{bar_style}]" if bar_style else bar
+            )
+        
+        # If we have an actual value, add it to the chart
+        if actual_value is not None:
+            # Calculate position for actual value
+            actual_position = int(30 * (actual_value - min_value) / value_range) if value_range else 15
+            actual_bar = " " * actual_position + "○"
+            
+            viz_table.add_row(
+                "Actual",
+                f"${actual_value:.2f}",
+                f"[bold cyan]{actual_bar}[/bold cyan]"
+            )
+        
+        console.print(viz_table)
+    
+    # Add additional insights if we have enough data
+    if len(history) > 1:
+        console.print("\n[bold]Insights:[/bold]")
+        
+        # Calculate average estimate
+        avg_estimate = sum(point["estimate_value"] for point in history) / len(history)
+        console.print(f"Average Estimate: ${avg_estimate:.2f}")
+        
+        # Calculate trend (increasing or decreasing)
+        first_estimate = history[0]["estimate_value"]
+        last_estimate = history[-1]["estimate_value"]
+        change = last_estimate - first_estimate
+        change_percent = (change / first_estimate) * 100 if first_estimate else 0
+        
+        trend = "increased" if change > 0 else "decreased" if change < 0 else "remained stable"
+        change_str = f"${abs(change):.2f} ({abs(change_percent):.2f}%)"
+        change_style = "green" if change > 0 else "red" if change < 0 else "white"
+        
+        console.print(f"Over the recorded period, estimates [bold {change_style}]{trend}[/bold {change_style}] by {change_str}.")
+        
+        # Add comparison to actual if available
+        if actual_value is not None:
+            # Average accuracy
+            avg_error = avg_estimate - actual_value
+            avg_error_percent = (avg_error / actual_value) * 100 if actual_value else 0
+            avg_direction = "overestimated" if avg_error > 0 else "underestimated" if avg_error < 0 else "correctly estimated"
+            avg_error_str = f"${abs(avg_error):.2f} ({abs(avg_error_percent):.2f}%)"
+            avg_error_style = "red" if avg_error > 0 else "green" if avg_error < 0 else "white"
+            
+            console.print(f"On average, analysts [bold {avg_error_style}]{avg_direction}[/bold {avg_error_style}] the EPS by {avg_error_str}.")
+            
+            # Find most accurate estimate
+            min_error_point = min(history, key=lambda x: abs(x["estimate_value"] - actual_value))
+            min_error_value = min_error_point["estimate_value"]
+            min_error = min_error_value - actual_value
+            min_error_percent = (min_error / actual_value) * 100 if actual_value else 0
+            min_error_date = min_error_point["date"].strftime("%Y-%m-%d") if min_error_point["date"] else min_error_point["date_str"]
+            
+            console.print(f"Most accurate estimate was ${min_error_value:.2f} (error: {min_error:.2f}, {min_error_percent:.2f}%) on {min_error_date}.")
+
+
+def display_eps_revisions(revisions: 'EpsRevisions', detailed: bool = False) -> None:
+    """
+    Display EPS revisions data in a formatted way.
+    
+    Args:
+        revisions: The EpsRevisions object to display
+        detailed: Whether to show detailed breakdown by period
+    """
+    # Company information panel
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", revisions.symbol)
+    if revisions.name:
+        header.add_row("Company:", revisions.name)
+    if revisions.last_updated:
+        header.add_row("Last Updated:", revisions.last_updated)
+    
+    console.print(Panel(header, title="EPS Revisions Analysis", expand=False))
+    
+    # Create summary table for weekly and monthly revisions
+    summary_table = Table(title="Summary of EPS Revisions", show_header=True, header_style="bold")
+    summary_table.add_column("Period")
+    summary_table.add_column("Total Revisions", justify="right")
+    summary_table.add_column("Upgrades", justify="right", style="green")
+    summary_table.add_column("Downgrades", justify="right", style="red")
+    summary_table.add_column("Maintained", justify="right", style="blue")
+    summary_table.add_column("Net Change", justify="right")
+    
+    # Calculate net change (upgrades - downgrades)
+    weekly_net = revisions.weekly.upgrades - revisions.weekly.downgrades
+    monthly_net = revisions.monthly.upgrades - revisions.monthly.downgrades
+    
+    # Format net change with colors and signs
+    weekly_net_str = f"+{weekly_net}" if weekly_net > 0 else str(weekly_net)
+    monthly_net_str = f"+{monthly_net}" if monthly_net > 0 else str(monthly_net)
+    
+    weekly_net_style = "green" if weekly_net > 0 else "red" if weekly_net < 0 else None
+    monthly_net_style = "green" if monthly_net > 0 else "red" if monthly_net < 0 else None
+    
+    # Add data rows
+    summary_table.add_row(
+        "Last Week",
+        str(revisions.weekly.total_revisions),
+        str(revisions.weekly.upgrades),
+        str(revisions.weekly.downgrades),
+        str(revisions.weekly.maintained),
+        Text(weekly_net_str, style=weekly_net_style)
+    )
+    
+    summary_table.add_row(
+        "Last Month",
+        str(revisions.monthly.total_revisions),
+        str(revisions.monthly.upgrades),
+        str(revisions.monthly.downgrades),
+        str(revisions.monthly.maintained),
+        Text(monthly_net_str, style=monthly_net_style)
+    )
+    
+    console.print(summary_table)
+    
+    # Add sentiment analysis based on revisions
+    sentiment_text = ""
+    if monthly_net > 0:
+        sentiment = "positive" if monthly_net >= 3 else "slightly positive"
+        sentiment_style = "green"
+    elif monthly_net < 0:
+        sentiment = "negative" if monthly_net <= -3 else "slightly negative"
+        sentiment_style = "red"
+    else:
+        sentiment = "neutral"
+        sentiment_style = "yellow"
+    
+    console.print(f"\nRevision sentiment is [bold {sentiment_style}]{sentiment}[/bold {sentiment_style}] over the last month.")
+    
+    # Print visualization of revisions trend
+    console.print("\n[bold]EPS Revision Trend:[/bold]")
+    
+    # Create visualization bar for weekly data
+    if revisions.weekly.total_revisions > 0:
+        total_width = 40
+        weekly_up_width = int((revisions.weekly.upgrades / revisions.weekly.total_revisions) * total_width)
+        weekly_down_width = int((revisions.weekly.downgrades / revisions.weekly.total_revisions) * total_width)
+        weekly_maintained_width = total_width - weekly_up_width - weekly_down_width
+        
+        weekly_bar = (
+            "[green]" + "█" * weekly_up_width + "[/green]" +
+            "[blue]" + "█" * weekly_maintained_width + "[/blue]" +
+            "[red]" + "█" * weekly_down_width + "[/red]"
+        )
+        console.print(f"Last Week:  {weekly_bar}")
+    
+    # Create visualization bar for monthly data
+    if revisions.monthly.total_revisions > 0:
+        total_width = 40
+        monthly_up_width = int((revisions.monthly.upgrades / revisions.monthly.total_revisions) * total_width)
+        monthly_down_width = int((revisions.monthly.downgrades / revisions.monthly.total_revisions) * total_width)
+        monthly_maintained_width = total_width - monthly_up_width - monthly_down_width
+        
+        monthly_bar = (
+            "[green]" + "█" * monthly_up_width + "[/green]" +
+            "[blue]" + "█" * monthly_maintained_width + "[/blue]" +
+            "[red]" + "█" * monthly_down_width + "[/red]"
+        )
+        console.print(f"Last Month: {monthly_bar}")
+    
+    console.print(f"[green]█[/green] Upgrades  [blue]█[/blue] Maintained  [red]█[/red] Downgrades")
+    
+    # Show detailed revision data by quarter/year if requested
+    if detailed:
+        console.print("\n[bold]Detailed EPS Revisions by Period:[/bold]")
+        
+        # Weekly detailed breakdown
+        if revisions.weekly.revisions_by_period:
+            weekly_detail_table = Table(title="Weekly Revisions by Period", show_header=True, header_style="bold")
+            weekly_detail_table.add_column("Quarter/Year")
+            weekly_detail_table.add_column("Total", justify="right")
+            weekly_detail_table.add_column("Upgrades", justify="right", style="green")
+            weekly_detail_table.add_column("Downgrades", justify="right", style="red")
+            weekly_detail_table.add_column("Maintained", justify="right", style="blue")
+            weekly_detail_table.add_column("Net Change", justify="right")
+            
+            for period, data in sorted(revisions.weekly.revisions_by_period.items()):
+                net_change = data['upgrades'] - data['downgrades']
+                net_change_str = f"+{net_change}" if net_change > 0 else str(net_change)
+                net_style = "green" if net_change > 0 else "red" if net_change < 0 else None
+                
+                weekly_detail_table.add_row(
+                    period,
+                    str(data['total']),
+                    str(data['upgrades']),
+                    str(data['downgrades']),
+                    str(data['maintained']),
+                    Text(net_change_str, style=net_style)
+                )
+            
+            console.print(weekly_detail_table)
+        
+        # Monthly detailed breakdown
+        if revisions.monthly.revisions_by_period:
+            monthly_detail_table = Table(title="Monthly Revisions by Period", show_header=True, header_style="bold")
+            monthly_detail_table.add_column("Quarter/Year")
+            monthly_detail_table.add_column("Total", justify="right")
+            monthly_detail_table.add_column("Upgrades", justify="right", style="green")
+            monthly_detail_table.add_column("Downgrades", justify="right", style="red")
+            monthly_detail_table.add_column("Maintained", justify="right", style="blue")
+            monthly_detail_table.add_column("Net Change", justify="right")
+            
+            for period, data in sorted(revisions.monthly.revisions_by_period.items()):
+                net_change = data['upgrades'] - data['downgrades']
+                net_change_str = f"+{net_change}" if net_change > 0 else str(net_change)
+                net_style = "green" if net_change > 0 else "red" if net_change < 0 else None
+                
+                monthly_detail_table.add_row(
+                    period,
+                    str(data['total']),
+                    str(data['upgrades']),
+                    str(data['downgrades']),
+                    str(data['maintained']),
+                    Text(net_change_str, style=net_style)
+                )
+            
+            console.print(monthly_detail_table)
+    
+    # Add interpretation if we have enough data
+    if revisions.monthly.total_revisions > 0:
+        console.print("\n[bold]Interpretation:[/bold]")
+        
+        # Analyze trend direction
+        if monthly_net > 0:
+            console.print("📈 Analysts are becoming more optimistic about future earnings.")
+            if revisions.monthly.upgrades >= 3 and revisions.monthly.upgrades > revisions.monthly.downgrades * 2:
+                console.print("   Strong bullish signal: Significant number of upward revisions.")
+        elif monthly_net < 0:
+            console.print("📉 Analysts are becoming more pessimistic about future earnings.")
+            if revisions.monthly.downgrades >= 3 and revisions.monthly.downgrades > revisions.monthly.upgrades * 2:
+                console.print("   Strong bearish signal: Significant number of downward revisions.")
+        else:
+            console.print("📊 Analysts' outlook remains balanced with no clear directional bias.")
+        
+        # Compare weekly to monthly for recent momentum shifts
+        if (weekly_net > 0 and monthly_net <= 0) or (weekly_net >= 2 and monthly_net > 0):
+            console.print("🔄 Recent momentum shift: More positive revisions in the last week compared to the monthly trend.")
+        elif (weekly_net < 0 and monthly_net >= 0) or (weekly_net <= -2 and monthly_net < 0):
+            console.print("🔄 Recent momentum shift: More negative revisions in the last week compared to the monthly trend.")
+
+def display_growth_estimates(estimates: 'GrowthEstimates') -> None:
+    """
+    Display company growth estimates in a formatted way.
+    
+    Args:
+        estimates: The GrowthEstimates object to display
+    """
+    # Company information panel
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", estimates.symbol)
+    if estimates.name:
+        header.add_row("Company:", estimates.name)
+    if estimates.last_updated:
+        header.add_row("Last Updated:", estimates.last_updated)
+    
+    console.print(Panel(header, title="Growth Estimates Analysis", expand=False))
+    
+    # Create general growth estimates table
+    growth_table = Table(title="Consensus Growth Estimates", show_header=True, header_style="bold")
+    growth_table.add_column("Period")
+    growth_table.add_column("Growth Rate (%)", justify="right")
+    
+    # Helper function to format growth values with color coding
+    def format_growth(value: Optional[float]) -> Text:
+        if value is None:
+            return Text("N/A", style="dim")
+        
+        # Format with sign and percentage
+        formatted = f"{value:+.2f}%" if value != 0 else "0.00%"
+        
+        # Color based on value
+        if value > 0:
+            return Text(formatted, style="green")
+        elif value < 0:
+            return Text(formatted, style="red")
+        else:
+            return Text(formatted)
+    
+    # Add general growth estimates
+    growth_periods = [
+        ("Current Quarter", estimates.current_quarter),
+        ("Next Quarter", estimates.next_quarter),
+        ("Current Year", estimates.current_year),
+        ("Next Year", estimates.next_year),
+        ("Next 5 Years (per annum)", estimates.next_five_years),
+        ("Past 5 Years (per annum)", estimates.past_five_years),
+    ]
+    
+    for period, value in growth_periods:
+        growth_table.add_row(
+            period,
+            format_growth(value)
+        )
+    
+    console.print(growth_table)
+    
+    # Create sales growth estimates table
+    sales_table = Table(title="Sales Growth Estimates", show_header=True, header_style="bold")
+    sales_table.add_column("Period")
+    sales_table.add_column("Growth Rate (%)", justify="right")
+    
+    # Add sales growth estimates
+    sales_periods = [
+        ("Current Quarter", estimates.sales_growth_current_quarter),
+        ("Current Year", estimates.sales_growth_current_year),
+    ]
+    
+    for period, value in sales_periods:
+        sales_table.add_row(
+            period,
+            format_growth(value)
+        )
+    
+    console.print(sales_table)
+    
+    # Create EPS growth estimates table
+    eps_table = Table(title="EPS Growth Estimates", show_header=True, header_style="bold")
+    eps_table.add_column("Period")
+    eps_table.add_column("Growth Rate (%)", justify="right")
+    
+    # Add EPS growth estimates
+    eps_periods = [
+        ("Current Quarter", estimates.eps_growth_current_quarter),
+        ("Next Quarter", estimates.eps_growth_next_quarter),
+        ("Current Year", estimates.eps_growth_current_year),
+        ("Next Year", estimates.eps_growth_next_year),
+    ]
+    
+    for period, value in eps_periods:
+        eps_table.add_row(
+            period,
+            format_growth(value)
+        )
+    
+    console.print(eps_table)
+    
+    # Create visualization of growth trends
+    console.print("\n[bold]Growth Rate Visualization:[/bold]")
+    
+    # Get all available growth rates for visualization
+    growth_data = [
+        ("Current Quarter", estimates.current_quarter),
+        ("Next Quarter", estimates.next_quarter),
+        ("Current Year", estimates.current_year),
+        ("Next Year", estimates.next_year),
+    ]
+    
+    # Filter out None values
+    growth_data = [(label, value) for label, value in growth_data if value is not None]
+    
+    if growth_data:
+        # Create visualization table
+        viz_table = Table(show_header=False, box=None, padding=(0, 2, 0, 2))
+        viz_table.add_column("Period")
+        viz_table.add_column("Growth Rate (%)", justify="right")
+        viz_table.add_column("Visualization", width=40)
+        
+        # Scale for visualization (ensure there's reasonable scale even with small numbers)
+        abs_values = [abs(value) for _, value in growth_data]
+        max_value = max(abs_values) if abs_values else 0
+        scale = max(max_value, 5)  # At least scale to 5% for visibility
+        
+        # Add visualization rows
+        for period, value in growth_data:
+            if value is None:
+                continue
+                
+            # Create bar visualization
+            bar_width = int(abs(value) * 30 / scale) if scale > 0 else 0
+            bar_width = max(1, bar_width)  # Minimum width of 1 for visibility
+            
+            if value > 0:
+                bar = "[green]" + "█" * bar_width + "[/green]"
+            elif value < 0:
+                bar = "[red]" + "█" * bar_width + "[/red]"
+            else:
+                bar = "▏"  # Minimal marker for zero
+            
+            viz_table.add_row(
+                period,
+                format_growth(value),
+                bar
+            )
+        
+        console.print(viz_table)
+    else:
+        console.print("[yellow]No growth data available for visualization.[/yellow]")
+    
+    # Add growth trend analysis
+    if estimates.current_year is not None and estimates.next_year is not None:
+        console.print("\n[bold]Growth Trend Analysis:[/bold]")
+        year_change = estimates.next_year - estimates.current_year
+        
+        if year_change > 0:
+            trend_msg = f"Growth is expected to [green]accelerate[/green] by {year_change:.2f}% next year."
+        elif year_change < 0:
+            trend_msg = f"Growth is expected to [yellow]decelerate[/yellow] by {abs(year_change):.2f}% next year."
+        else:
+            trend_msg = "Growth is expected to [blue]remain stable[/blue] next year."
+            
+        console.print(trend_msg)
+    
+    # Add long-term vs short-term growth comparison
+    if estimates.next_five_years is not None and estimates.current_year is not None:
+        long_short_diff = estimates.next_five_years - estimates.current_year
+        
+        if abs(long_short_diff) > 5:
+            if long_short_diff > 0:
+                console.print(f"[green]Long-term growth ({estimates.next_five_years:.2f}%) is expected to be higher than current-year growth ({estimates.current_year:.2f}%).[/green]")
+            else:
+                console.print(f"[yellow]Long-term growth ({estimates.next_five_years:.2f}%) is expected to be lower than current-year growth ({estimates.current_year:.2f}%).[/yellow]")
+    
+    # Add sales vs EPS growth comparison
+    if (estimates.sales_growth_current_year is not None and 
+        estimates.eps_growth_current_year is not None):
+        
+        diff = estimates.eps_growth_current_year - estimates.sales_growth_current_year
+        
+        if diff > 5:
+            console.print(f"[green]EPS growth ({estimates.eps_growth_current_year:.2f}%) is expected to outpace sales growth ({estimates.sales_growth_current_year:.2f}%), suggesting margin expansion.[/green]")
+        elif diff < -5:
+            console.print(f"[red]EPS growth ({estimates.eps_growth_current_year:.2f}%) is expected to lag sales growth ({estimates.sales_growth_current_year:.2f}%), suggesting margin contraction.[/red]")
+    
+    # Add historical vs future comparison
+    if estimates.past_five_years is not None and estimates.next_five_years is not None:
+        diff = estimates.next_five_years - estimates.past_five_years
+        
+        if abs(diff) > 3:
+            if diff > 0:
+                console.print(f"[green]Future 5-year growth ({estimates.next_five_years:.2f}%) is expected to be higher than past 5-year growth ({estimates.past_five_years:.2f}%).[/green]")
+            else:
+                console.print(f"[yellow]Future 5-year growth ({estimates.next_five_years:.2f}%) is expected to be lower than past 5-year growth ({estimates.past_five_years:.2f}%).[/yellow]")
+        else:
+            console.print(f"[blue]Future 5-year growth is expected to be similar to past 5-year growth.[/blue]")
+
+
+def display_analyst_recommendations(recommendations: 'AnalystRecommendations', detailed: bool = False) -> None:
+    """
+    Display analyst recommendations data in a formatted way.
+    
+    Args:
+        recommendations: The AnalystRecommendations object to display
+        detailed: Whether to show individual analyst recommendations
+    """
+    # Company information panel
+    header = Table.grid(padding=1)
+    header.add_column(style="bold")
+    header.add_column()
+    
+    header.add_row("Symbol:", recommendations.symbol)
+    if recommendations.name:
+        header.add_row("Company:", recommendations.name)
+    if recommendations.last_updated:
+        header.add_row("Last Updated:", recommendations.last_updated)
+    
+    consensus = recommendations.consensus
+    classification = consensus.classification
+    
+    # Set classification color based on rating
+    if classification == "Strong Buy":
+        class_color = "bright_green"
+    elif classification == "Buy":
+        class_color = "green"
+    elif classification == "Hold":
+        class_color = "yellow"
+    elif classification == "Sell":
+        class_color = "red"
+    elif classification == "Strong Sell":
+        class_color = "bright_red"
+    else:
+        class_color = "white"
+    
+    header.add_row("Consensus Rating:", f"[bold {class_color}]{classification}[/bold {class_color}]")
+    
+    if consensus.average_score > 0:
+        header.add_row("Average Score:", f"{consensus.average_score:.2f}")
+    header.add_row("Total Analysts:", f"{consensus.total_analysts}")
+    
+    console.print(Panel(header, title="Analyst Recommendations Summary", expand=False))
+    
+    # Create consensus rating distribution table
+    summary_table = Table(title="Consensus Rating Distribution", show_header=True, header_style="bold")
+    summary_table.add_column("Rating")
+    summary_table.add_column("Count", justify="right")
+    summary_table.add_column("Percentage", justify="right")
+    summary_table.add_column("Visualization", width=40)
+    
+    # Calculate percentages for visualization
+    percentages = consensus.get_distribution_percentages()
+    
+    # Strong Buy row
+    strong_buy_percent = percentages["strong_buy"]
+    strong_buy_bar = "█" * int(strong_buy_percent * 0.4)
+    summary_table.add_row(
+        "Strong Buy",
+        str(consensus.strong_buy),
+        f"{strong_buy_percent:.1f}%",
+        Text(strong_buy_bar, style="bright_green")
+    )
+    
+    # Buy row
+    buy_percent = percentages["buy"]
+    buy_bar = "█" * int(buy_percent * 0.4)
+    summary_table.add_row(
+        "Buy",
+        str(consensus.buy),
+        f"{buy_percent:.1f}%",
+        Text(buy_bar, style="green")
+    )
+    
+    # Hold row
+    hold_percent = percentages["hold"]
+    hold_bar = "█" * int(hold_percent * 0.4)
+    summary_table.add_row(
+        "Hold",
+        str(consensus.hold),
+        f"{hold_percent:.1f}%",
+        Text(hold_bar, style="yellow")
+    )
+    
+    # Sell row
+    sell_percent = percentages["sell"]
+    sell_bar = "█" * int(sell_percent * 0.4)
+    summary_table.add_row(
+        "Sell",
+        str(consensus.sell),
+        f"{sell_percent:.1f}%",
+        Text(sell_bar, style="red")
+    )
+    
+    # Strong Sell row
+    strong_sell_percent = percentages["strong_sell"]
+    strong_sell_bar = "█" * int(strong_sell_percent * 0.4)
+    summary_table.add_row(
+        "Strong Sell",
+        str(consensus.strong_sell),
+        f"{strong_sell_percent:.1f}%",
+        Text(strong_sell_bar, style="bright_red")
+    )
+    
+    console.print(summary_table)
+    
+    # Add simplified distribution bar
+    buy_percent, hold_percent, sell_percent = consensus.get_buy_hold_sell_ratio()
+    
+    console.print("\n[bold]Buy/Hold/Sell Distribution:[/bold]")
+    
+    # Calculate widths for the distribution bar (total width = 50)
+    buy_width = int(buy_percent * 0.5)
+    hold_width = int(hold_percent * 0.5)
+    sell_width = int(sell_percent * 0.5)
+    
+    # Ensure at least 1 character for non-zero percentages
+    if buy_percent > 0 and buy_width == 0:
+        buy_width = 1
+    if hold_percent > 0 and hold_width == 0:
+        hold_width = 1
+    if sell_percent > 0 and sell_width == 0:
+        sell_width = 1
+        
+    # Adjust to ensure total width is 50
+    total_width = buy_width + hold_width + sell_width
+    if total_width < 50:
+        # Add the difference to the largest segment
+        if buy_percent >= hold_percent and buy_percent >= sell_percent:
+            buy_width += (50 - total_width)
+        elif hold_percent >= buy_percent and hold_percent >= sell_percent:
+            hold_width += (50 - total_width)
+        else:
+            sell_width += (50 - total_width)
+    elif total_width > 50:
+        # Remove from the largest segment
+        if buy_percent >= hold_percent and buy_percent >= sell_percent:
+            buy_width -= (total_width - 50)
+        elif hold_percent >= buy_percent and hold_percent >= sell_percent:
+            hold_width -= (total_width - 50)
+        else:
+            sell_width -= (total_width - 50)
+    
+    distribution_bar = (
+        "[green]" + "█" * buy_width + "[/green]" +
+        "[yellow]" + "█" * hold_width + "[/yellow]" +
+        "[red]" + "█" * sell_width + "[/red]"
+    )
+    console.print(distribution_bar)
+    console.print(f"[green]Buy: {buy_percent:.1f}%[/green]  [yellow]Hold: {hold_percent:.1f}%[/yellow]  [red]Sell: {sell_percent:.1f}%[/red]")
+    
+    # Show individual recommendations if detailed view is requested
+    if detailed and recommendations.recommendations:
+        console.print("\n[bold]Recent Analyst Recommendations:[/bold]")
+        
+        rec_table = Table(show_header=True, header_style="bold")
+        rec_table.add_column("Firm")
+        rec_table.add_column("Rating")
+        rec_table.add_column("Action")
+        rec_table.add_column("Target Price")
+        rec_table.add_column("Date")
+        
+        # Show up to 15 most recent recommendations
+        recent_recs = sorted(
+            recommendations.recommendations, 
+            key=lambda r: r.date if r.date else "", 
+            reverse=True
+        )[:15]
+        
+        for rec in recent_recs:
+            # Determine rating color
+            if "buy" in rec.rating.lower() or "outperform" in rec.rating.lower():
+                rating_style = "green"
+            elif "sell" in rec.rating.lower() or "underperform" in rec.rating.lower():
+                rating_style = "red"
+            else:
+                rating_style = "yellow"
+            
+            # Determine action style
+            if "upgrade" in rec.action.lower():
+                action_style = "green"
+            elif "downgrade" in rec.action.lower():
+                action_style = "red"
+            else:
+                action_style = None
+            
+            # Format the target price
+            target_price = f"${rec.target_price:.2f}" if rec.target_price is not None else "N/A"
+            
+            rec_table.add_row(
+                rec.firm,
+                Text(rec.rating, style=rating_style),
+                Text(rec.action, style=action_style) if action_style else rec.action,
+                target_price,
+                rec.date
+            )
+        
+        console.print(rec_table)
+    
+    # Add interpretation of the consensus
+    console.print("\n[bold]Interpretation:[/bold]")
+    avg_score = consensus.average_score
+    
+    if avg_score <= 1.5:
+        console.print("The analyst consensus is [bold green]strongly positive[/bold green]. The majority of analysts recommend buying the stock, suggesting strong confidence in the company's future performance.")
+    elif avg_score <= 2.5:
+        console.print("The analyst consensus is [bold green]positive[/bold green]. More analysts recommend buying than holding or selling, indicating favorable expectations for the stock.")
+    elif avg_score <= 3.5:
+        console.print("The analyst consensus is [bold yellow]neutral[/bold yellow]. Analysts are divided or mostly recommending holding the stock, suggesting balanced or uncertain expectations.")
+    elif avg_score <= 4.5:
+        console.print("The analyst consensus is [bold red]negative[/bold red]. More analysts recommend selling than buying, indicating concerns about the company's future performance.")
+    else:
+        console.print("The analyst consensus is [bold bright_red]strongly negative[/bold bright_red]. The majority of analysts recommend selling the stock, suggesting significant concerns about the company's future performance.")
